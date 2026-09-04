@@ -1,0 +1,23 @@
+services:
+  agentg:
+    build: .
+    container_name: agentg_container
+    ports:
+      - "8080:8000"
+    env_file:
+      - .env
+    stdin_open: true
+    tty: true
+    volumes:
+      - ./src:/app/src   # 将本地的 src 目录实时映射到容器内的 /app/src
+      - ./.env:/app/.env # 顺便把 .env 也映射进去，改配置也无需重启
+    # 如果你开启了 Redis，取消下面两行的注释，让 Agent 等待 Redis 启动
+    # depends_on:
+    #   - redis
+
+  # 备用 Redis 服务（如果 .env 中 USE_REDIS=true）
+  # redis:
+  #   image: redis:alpine
+  #   container_name: agentg_redis
+  #   ports:
+  #     - "6379:6379"

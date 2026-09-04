@@ -1,0 +1,23 @@
+# 用户专属配置与凭据
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Agent 运行产物
+src/multi_agent_system/workspace/
+*.log
