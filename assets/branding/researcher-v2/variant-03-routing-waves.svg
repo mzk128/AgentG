@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-labelledby="title desc">
+  <title id="title">AgentG Routing Waves</title>
+  <desc id="desc">Six structured task streams sweep through a bob-shaped result boundary.</desc>
+  <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M24 54c0-18 12-31 29-31 17 0 28 12 28 30 0 17-11 29-28 29-12 0-22-6-27-16" stroke-width="4"/>
+    <path d="M25 43c11 0 20-7 25-18" stroke-width="3.5"/>
+    <path d="M27 49c14-1 24-8 29-21" stroke-width="3.2" opacity=".88"/>
+    <path d="M29 56c17-2 29-10 34-24" stroke-width="3" opacity=".75"/>
+    <path d="M33 63c18-2 31-10 37-25" stroke-width="2.8" opacity=".62"/>
+    <path d="M39 70c17-2 29-9 36-23" stroke-width="2.6" opacity=".48"/>
+    <path d="m28 38-7 7 7 3M76 37l7 6-6 4" stroke-width="3.5"/>
+  </g>
+  <circle cx="77" cy="53" r="4" fill="currentColor"/>
+</svg>

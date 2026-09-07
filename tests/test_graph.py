@@ -1,3 +1,7 @@
+from dataclasses import replace
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
+
 from multi_agent_system.graph import (
     MAX_REVIEW_ROUNDS,
     _affected_task_ids,
@@ -7,11 +11,13 @@ from multi_agent_system.graph import (
     initialize_resources_node,
     prepare_batch_node,
     prepare_revision_node,
+    refresh_resume_deadline,
     route_after_fan_in,
     route_after_review,
     route_task,
     resource_terminated_node,
 )
+from multi_agent_system.storage import RedisCheckpointSaver
 
 
 def _workflow_state():
@@ -129,6 +135,15 @@ class TestDependencyScheduler:
         sends = dispatch_workers(state)
         assert sends[0].arg["attempt"] == 3
 
+    def test_dispatch_passes_only_bound_workspace_to_worker(self):
+        state = _workflow_state()
+        state["current_batch_ids"] = ["data"]
+        state["workspace_path"] = r"D:\projects\demo"
+
+        sends = dispatch_workers(state)
+
+        assert sends[0].arg["workspace_path"] == r"D:\projects\demo"
+
     def test_parallel_dispatch_uses_non_overlapping_quotas(self):
         state = _workflow_state()
         state["current_batch_ids"] = ["research", "data"]
@@ -171,6 +186,28 @@ class TestResourceLifecycle:
         assert result["review_status"] == "blocked"
         assert result["is_pass"] is False
         assert "max_tool_calls_exceeded" in result["review"]
+
+    def test_resume_refreshes_only_wall_clock_deadline(self, settings):
+        graph = MagicMock()
+        graph.get_state.return_value = SimpleNamespace(
+            values={
+                "resource_policy": {
+                    "max_tool_calls": 12,
+                    "started_at": 10.0,
+                    "deadline_at": 20.0,
+                }
+            },
+            next=("research_worker",),
+        )
+
+        with patch("multi_agent_system.graph.time.time", return_value=100.0):
+            assert refresh_resume_deadline(graph, {"configurable": {}}, settings)
+
+        policy = graph.update_state.call_args.args[1]["resource_policy"]
+        assert policy["started_at"] == 10.0
+        assert policy["resumed_at"] == 100.0
+        assert policy["deadline_at"] == 100.0 + settings.max_run_seconds
+        assert policy["max_tool_calls"] == 12
 
 
 class TestTargetedRevision:
@@ -240,3 +277,7 @@ class TestBuildGraph:
         nodes = set(build_graph(settings).get_graph().nodes)
         assert "planner" not in nodes
         assert "executor" not in nodes
+
+    def test_redis_settings_select_persistent_checkpointer(self, settings):
+        graph = build_graph(replace(settings, use_redis=True))
+        assert isinstance(graph.checkpointer, RedisCheckpointSaver)

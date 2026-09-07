@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-labelledby="title desc">
+  <title id="title">AgentG Review Circuit</title>
+  <desc id="desc">A side-swept worker circuit closes through a directed reviewer return path.</desc>
+  <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M35 36 53 25M53 25l19 13M35 36 28 55M35 36l15 20M72 38 50 56M72 38l6 19M28 55l22 1M50 56l1 18M78 57 51 74" stroke-width="2.5" opacity=".55"/>
+    <path d="M78 68c-7 12-23 17-37 11-12-5-19-17-17-30" stroke-width="4"/>
+    <path d="m20 54 4-7 7 4M29 40c9-1 18-7 24-16M72 34l9 7-7 5" stroke-width="3.5"/>
+  </g>
+  <g fill="currentColor">
+    <circle cx="53" cy="25" r="7"/>
+    <circle cx="35" cy="36" r="4.5"/>
+    <circle cx="72" cy="38" r="4.5"/>
+    <circle cx="28" cy="55" r="4" opacity=".72"/>
+    <circle cx="50" cy="56" r="5"/>
+    <circle cx="78" cy="57" r="4" opacity=".72"/>
+    <circle cx="51" cy="74" r="4.5"/>
+  </g>
+</svg>

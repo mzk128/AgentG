@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from functools import partial
 import time
-from typing import Literal
+from typing import Any, Literal
 
 import httpx
 from langchain_openai import ChatOpenAI
@@ -28,6 +28,7 @@ from .agents import (
 )
 from .config import Settings
 from .state import MultiAgentState
+from .storage import RedisCheckpointSaver
 
 
 MAX_REVIEW_ROUNDS = 2
@@ -155,6 +156,7 @@ def dispatch_workers(
             "task_id": task_id,
             "agent_type": spec["agent_type"],
             "objective": spec["objective"],
+            "workspace_path": state.get("workspace_path", ""),
             "upstream_results": upstream_results,
             "allowed_tools": spec.get("allowed_tools", []),
             "output_format": spec.get("output_format", "清晰文本"),
@@ -289,7 +291,24 @@ def route_after_review(
     return "__end__"
 
 
-def build_graph(settings: Settings):
+def refresh_resume_deadline(graph: Any, config: dict, settings: Settings) -> bool:
+    """Refresh the cooperative wall-clock window for an unfinished checkpoint.
+
+    Tool/action/error consumption remains in the checkpoint.  Only downtime is
+    excluded from the wall-clock limit so a restart can actually continue.
+    """
+    snapshot = graph.get_state(config)
+    if not snapshot.values or not snapshot.next:
+        return False
+    now = time.time()
+    policy = dict(snapshot.values.get("resource_policy", {}))
+    policy["resumed_at"] = now
+    policy["deadline_at"] = now + settings.max_run_seconds
+    graph.update_state(config, {"resource_policy": policy})
+    return True
+
+
+def build_graph(settings: Settings, *, checkpointer: Any | None = None):
     http_client = httpx.Client(trust_env=False)
     llm = ChatOpenAI(
         model=settings.model_name,
@@ -355,4 +374,10 @@ def build_graph(settings: Settings):
     graph.add_edge("prepare_revision", "prepare_batch")
     graph.add_edge("resource_terminated", END)
 
-    return graph.compile(checkpointer=MemorySaver())
+    if checkpointer is None:
+        checkpointer = (
+            RedisCheckpointSaver(settings.redis_url)
+            if settings.use_redis
+            else MemorySaver()
+        )
+    return graph.compile(checkpointer=checkpointer)

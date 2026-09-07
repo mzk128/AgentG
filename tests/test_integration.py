@@ -125,8 +125,10 @@ class TestComplexTeamWorkflow:
         for item in result["worker_results"]:
             latest[item["task_id"]] = item
         assert set(latest) == {"research", "data", "synthesis"}
-        assert "Trusted source" in latest["research"]["content"]
-        assert "Average sales: 200.0" in latest["data"]["content"]
+        assert latest["research"]["content"] == "Worker final answer based on tool observation"
+        assert latest["data"]["content"] == "Worker final answer based on tool observation"
+        assert "Trusted source" in latest["research"]["tool_observations"][0]["content"]
+        assert "Average sales: 200.0" in latest["data"]["tool_observations"][0]["content"]
         assert result["execution_result"] == "Final synthesis with research and average sales"
         assert result["is_pass"] is True
 

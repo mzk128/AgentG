@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-labelledby="title desc">
+  <title id="title">AgentG Review Loop</title>
+  <desc id="desc">An asymmetric worker network forms a friendly face while a return arc closes the review loop.</desc>
+  <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M53 25 37 43M53 25l18 20M37 43l-7 20M37 43l16 26M71 45l-18 24M71 45l5 18M30 63l23 6M53 69l23-6" stroke-width="2.5" opacity=".55"/>
+    <path d="M78 69c-6 12-21 17-34 12-13-5-21-18-18-31" stroke-width="4"/>
+    <path d="m22 54 4-6 6 4" stroke-width="4"/>
+    <path d="M33 38c8-2 15-7 20-14" stroke-width="3.5"/>
+  </g>
+  <g fill="currentColor">
+    <circle cx="53" cy="23" r="8"/>
+    <circle cx="37" cy="43" r="5"/>
+    <circle cx="71" cy="45" r="5"/>
+    <circle cx="30" cy="63" r="4" opacity=".68"/>
+    <circle cx="53" cy="69" r="5"/>
+    <circle cx="76" cy="63" r="4" opacity=".68"/>
+  </g>
+</svg>

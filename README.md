@@ -2,13 +2,13 @@
 
 AgentG 是基于 **LangGraph** 的可控 Multi-Agent / Agentic Workflow。系统先判断任务应当“简单直通”还是“复杂组队”；复杂任务由 Orchestrator 拆成结构化子任务，再交给 ResearchAgent、CodeAgent、DataAgent 和 SynthesisAgent。无依赖子任务并行 Fan-out，有依赖任务按拓扑顺序串行，最后由结构化 Reviewer 验收并定向返工。
 
-> 本文档兼作工作进度记录。最近核对日期：**2026-09-05**。
+> 本文档兼作工作进度记录。最近核对日期：**2026-09-07**。
 
 ## 当前进度
 
 | 模块 | 状态 | 实现 |
 |---|---|---|
-| Task Router | ✅ | 类型化判断 `simple/team`；简单任务选择一个专业 Worker |
+| Task Router | ✅ | 类型化判断 `simple/team`；含多城市天气的并行任务确定性校正为 team，单城市实时天气限定 ResearchAgent |
 | Orchestrator | ✅ | 输出含 Agent、依赖、工具、格式和验收标准的 `SubTaskSpec[]` |
 | 四类 Worker | ✅ | Research、Code、Data、Synthesis，可继续扩展 |
 | Fan-out / Fan-in | ✅ | Ready batch 内并行，汇聚后再调度下一层依赖 |
@@ -18,22 +18,34 @@ AgentG 是基于 **LangGraph** 的可控 Multi-Agent / Agentic Workflow。系统
 | 完整工具循环 | ✅ | `AIMessage(tool_calls)` → 工具执行 → `ToolMessage` → 模型，支持多轮观察 |
 | 资源终止策略 | ✅ | 限制时间、工具轮次/次数、连续错误和动作总预算；暂不计算 Token |
 | 实时天气工具 | ✅ | 当前天气任务自动使用 Open-Meteo 结构化接口，不再依赖搜索摘要 |
-| CLI / Web / SSE | ✅ | 已适配新节点、并行合并状态和历史展示 |
-| MemorySaver | 🟡 | 仅为单进程内 LangGraph checkpoint |
-| Redis | 🟡 | CLI 可选最终快照，尚未接入图 checkpoint 和 Web 历史 |
+| CLI / Web / SSE | ✅ | Agent 工作台 UI、可滚动会话时间线、Codex 式底部输入区、运行进度恢复和统一状态 |
+| UI 风格 | ✅ | 左下角可切换石墨黑、深海蓝和纸张白，选择保存在浏览器本地 |
+| 任务过程呈现 | ✅ | 执行步骤可逐项收起/展开；终态默认收起技术过程，JSON 结果自动转换为用户可读自然语言 |
+| 会话任务导航 | ✅ | DeepSeek 风格的居中细刻度轨道；位于最右滚动条左侧，悬停/聚焦展开任务列表 |
+| 品牌 Logo | ✅ | 已选用 `01-researcher-v2` 编号 01 `Researcher Core` 作为主产品 Logo，并通过共享的内联 `currentColor` SVG Symbol 接入 Web 左上角与主页面空状态；保留两组共 12 套探索资产供扩展场景使用 |
+| 多轮会话 | ✅ | 完成后可在同一会话继续；每轮使用独立 `thread_id` 和 checkpoint，通过会话链关联 |
+| 会话管理 | ✅ | 左侧会话右键可置顶/取消置顶、重命名或删除整会话；运行中禁止删除 |
+| 本地工作目录 | ✅（逻辑约束） | Web 可绑定已存在的绝对路径；会话内继承并锁定，Python 相对路径从该目录解析 |
+| Web 开发热加载 | ✅ | `--reload` 或 `WEB_RELOAD=true` 显式启用，仅监视源码/模板并排除运行产物 |
+| 持久化恢复 | ✅ | 默认使用 MemorySaver；启用 Redis 后持久化 LangGraph checkpoint、pending writes 与 Web 历史，可按 `thread_id` 恢复 |
+| Redis 3.2 兼容 | ✅ | 自定义 `BaseCheckpointSaver` 使用 RESP2 与 String/Hash/Set/ZSet，不依赖 RedisJSON 或 RediSearch |
 | JSON Mode 兼容性 | ✅ | 显式声明 `json` 字段，并规范化常见的键名和单项数组偏差 |
-| 自动化测试 | ✅ | Docs2KG / Python 3.11.9 中 **107 项通过** |
+| 自动化测试 | ✅ | Docs2KG / Python 3.11.9 中 **147 项通过** |
 
-### 最新验证
+### 最近完成（2026-09-07）
 
-```text
-环境：Conda Docs2KG / Python 3.11.9
-命令：D:\anconda\envs\Docs2KG\python.exe -m pytest -q -p no:cacheprovider
-结果：107 passed in 8.40s
-日期：2026-09-05
-```
-
-测试通过 mock 隔离 ChatOpenAI、DuckDuckGo、HTTP 和 Redis，不需要真实 API Key 或在线服务；测试入口还会禁用 dotenv，避免读取用户的 `.env`。`compileall` 同期通过。
+1. **会话滚动**：将中央时间线改为唯一纵向滚动容器，取消单张 Agent 输出卡片的固定高度与嵌套滚动，长任务可连续回看。
+2. **任务结束后继续对话**：会话与单次运行分离，终态后可继续新一轮；每轮使用新 `thread_id`，但共享 `conversation_id` 并通过 `parent_thread_id` 维持历史链。
+3. **本地工作目录录入**：Web 底部输入区可录入已存在的绝对路径，后端完成规范化和目录校验，会话续接时自动继承且禁止切换已绑定目录。
+4. **上下文与产物隔离**：后续轮次只携带历史任务和最终结果的精简上下文；生成代码按工作目录和 `thread_id` 分目录保存。
+5. **底部 UI 与风格切换**：工作目录和执行按钮收入输入卡片工具栏，代码产物和快捷键提示放在最底层；左下角新增三套可持久化主题。
+6. **会话管理**：会话右键菜单支持置顶、重命名和带确认的整会话删除；删除会同步清理全部轮次及 Redis checkpoints。
+7. **Web 热加载**：新增显式开发模式，可监视 Python 源码与 HTML/CSS/JavaScript 模板，同时排除 `workspace/`、`.agentg/`和缓存。
+8. **步骤折叠**：每个 Agent 执行步骤提供独立收起/展开按钮；终态任务默认折叠技术过程，运行中的新步骤保持展开。
+9. **会话任务导航**：右侧改为 DeepSeek 风格的极窄刻度轨道；内容滚动条固定在主区域最右侧，导航列位于滚动条左侧并在会话可视区垂直居中。悬停或键盘聚焦时展开圆角任务列表，当前轮次使用蓝色文字与加长刻度标记，点击后平滑定位并跟随滚动高亮。
+10. **用户结果总结**：成功、Reviewer 未通过、执行异常和资源终止均生成普通用户可理解的终态摘要；纯 JSON 或 JSON 代码块会转换为自然语言段落和编号结果，不暴露私有思维链，也不额外调用模型。
+11. **验证**：Docs2KG / Python 3.11.9 全量 `147 passed`，并完成本地浏览器折叠、导航、成功/失败总结、三主题 Logo 与 760 px 窄屏布局核对。
+12. **Logo 选型与接入**：在两组共 12 套概念中选定 `01-researcher-v2` 编号 01 `Researcher Core`。正式矢量资产继续使用透明背景、`viewBox="0 0 100 100"` 与 `currentColor`；Web 通过同一个内联 SVG Symbol 同时渲染左上角品牌标识与主页面空状态 Logo，避免两处图形漂移。
 
 ## 工作流
 
@@ -85,6 +97,8 @@ reason: string
 
 三个 `json_mode` 节点都会在提示词中声明准确的 JSON 字段。Task Router 还会兼容部分模型返回的 `{"type":"team"}`：解析前将合法的 `type` 别名规范化为 `route`，缺失的 `reason` 使用可识别的默认说明；其他非法路由值仍会触发校验错误。
 
+模型路由之后还会执行窄范围能力校正：包含多个或随机生成城市的天气任务强制进入 `team`，由 Orchestrator 拆分可并行查询；单城市当前/实时天气若走 `simple`，则强制使用拥有 `current_weather` 权限的 ResearchAgent。校正不覆盖历史天气数据分析等其他任务，避免用领域关键词替代通用路由判断。
+
 ### Orchestrator–Worker
 
 每个 `SubTaskSpec` 包含：
@@ -101,7 +115,7 @@ reason: string
 
 Orchestrator 会清理重复 ID、无效依赖和越权工具。若检测到循环依赖，计划会按声明顺序降级为串行。复杂计划末尾会确保存在最终 SynthesisAgent。
 
-为兼容部分 OpenAI-compatible 模型的 JSON Mode 输出偏差，`dependencies`、`allowed_tools` 和 `acceptance_criteria` 在解析时允许单个字符串，并立即规范化为单元素列表；内部状态和后续调度仍只使用类型安全的 `list[str]`。提示词同时明确要求这三个字段始终输出 JSON 数组，即使只有一项也不能使用字符串。
+为兼容部分 OpenAI-compatible 模型的 JSON Mode 输出偏差，`dependencies`、`allowed_tools` 和 `acceptance_criteria` 在解析时允许单个字符串，并立即规范化为单元素列表；`output_format` 则允许模型返回单元素字符串数组，并立即解包为正式的字符串类型。多元素或非字符串 `output_format` 仍会校验失败，不会把含糊数据送入调度器。提示词同时明确前三个字段必须始终输出 JSON 数组，而 `output_format` 必须始终输出 JSON 字符串。
 
 ### 专业 Worker 与工具权限
 
@@ -154,19 +168,44 @@ confidence: 0.0 .. 1.0
 
 Worker 不接收完整用户对话、完整主图状态或无关分支结果。
 
+### 多轮会话与工作目录
+
+Web 将“会话”与“单次工作流运行”分开：
+
+- `conversation_id` 标识一个可持续追加的会话；
+- 每一轮仍创建新的 `thread_id`，避免复用已终止的 LangGraph checkpoint；
+- `parent_thread_id` 与 `turn_index` 将各轮串成有序链，界面按会话聚合左侧列表，中央时间线展示全部轮次；
+- 新一轮只携带前文的“用户任务 + 最终结果”精简摘要，不重放工具输出、执行日志或完整主图状态；
+- 上一轮必须进入 completed、terminated 或 failed 终态后才能继续。
+
+Web 输入区可选绑定一个已存在的本机绝对目录。绑定后路径随会话继承且不得切换；`python_repl` 在进程锁保护下临时以该目录为当前目录，相对路径由此解析，Web 生成代码保存到 `<workspace>/.agentg/<thread_id>/`。未绑定时，Web 产物保存到项目内的 `workspace/<thread_id>/`。
+
+> 这是工作目录和提示词层的范围约束，**不是操作系统级文件沙箱**。当前 `python_repl` 仍是进程内 `exec()`，理论上可使用绝对路径访问绑定目录外部。若要强保证“只在打开的文件夹内操作”，需要把工具迁移到只挂载该目录的受限子进程或容器。
+
+### 持久化与恢复
+
+`USE_REDIS=false` 时仍使用进程内 `MemorySaver`，适合本地临时运行。`USE_REDIS=true` 时，`RedisCheckpointSaver` 接管 LangGraph 原生检查点：
+
+- 完整保存 checkpoint、metadata、父检查点链和并行分支的 pending writes；
+- 同一 `thread_id` 可由新的 CLI/Web 进程读取并从最后一个可恢复节点继续；
+- Web 的 pending、running、failed、completed、terminated 任务记录和历史列表同步写入 Redis；
+- 每个可观察节点完成后增量保存消息、当前 Agent 和阶段性结构化结果，运行中任务不必等待终态即可查看；
+- 删除 Web 任务时，同时删除该任务记录与对应的全部 LangGraph checkpoints；
+- 恢复运行只刷新 `MAX_RUN_SECONDS` 的协作式墙钟窗口，已消耗的工具次数、动作预算和错误状态继续沿用。
+
+该实现显式使用 RESP2，并且只调用 Redis 3.2 已支持的 String、Hash、Set 和 Sorted Set 命令，适配本项目现有的普通 Redis 3.2 环境。进程如果在某个节点执行期间退出，会从最近一次已经提交的检查点继续；尚未提交的当前节点可能重新执行，因此带外部副作用的工具后续仍需增加幂等键。
+
 ## 工具调用
 
-- `web_search`：优先使用维护中的 `ddgs` 元搜索包，失败后降级到 DuckDuckGo HTML 和 Lite 页面；最终失败时返回不含敏感连接信息的异常类型诊断。
-- `current_weather`：先通过 Open-Meteo Geocoding API 解析城市，再查询当前温度、体感温度、湿度、天气代码和风况；无需 API Key。当前或实时天气子任务会在计划规范化阶段自动切换到该工具。
-- `python_repl`：在当前 Python 进程运行代码并捕获 stdout/异常。
+| 工具 | 用途 |
+|---|---|
+| `web_search` | 使用 `ddgs` 搜索，失败时降级到 DuckDuckGo HTML/Lite |
+| `current_weather` | 通过 Open-Meteo 获取城市实时天气，无需 API Key |
+| `python_repl` | 在当前进程执行 Python；Web 模式下从会话绑定目录解析相对路径 |
 
-CLI 和 Web 启动入口不再清空 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY` 等系统代理变量，因此外部工具可以遵循用户运行环境的网络配置。
-
-工具通过 LangChain `@tool` 注册。专业 Worker 使用完整的工具观察循环：模型返回含 `tool_calls` 的 `AIMessage` 后，系统校验角色工具箱与子任务白名单，执行获准工具，为每个调用生成具有相同 `tool_call_id` 的 `ToolMessage`，然后把对话历史再次提交给模型。循环持续到模型返回不含工具调用的最终答复，或触发资源上限。Worker 结果会记录 `tool_observations`、`usage` 和可选的 `termination_reason`。
+工具由 LangChain `@tool` 注册。Worker 按“`AIMessage(tool_calls)` → 权限校验 → 工具执行 → `ToolMessage` → 模型”的循环运行；可用工具取角色工具箱与子任务白名单的交集。最终答案写入 `content`，原始观察和诊断分别写入 `tool_observations`、消息事件及 `error_logs`。
 
 ### 资源终止策略
-
-一次图运行在开始时固定资源策略与截止时间：
 
 | 环境变量 | 默认值 | 含义 |
 |---|---:|---|
@@ -176,9 +215,7 @@ CLI 和 Web 启动入口不再清空 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY` 
 | `MAX_RUN_SECONDS` | `120` | 整个工作流的协作式墙钟截止时间 |
 | `TOTAL_ACTION_BUDGET` | `40` | 整个工作流可用动作单位总数 |
 
-动作预算当前定义为：一次模型调用消耗 1，一次实际工具执行消耗 1。Token 不计入终止策略，`token_budget_enabled` 固定为 `false`。Router、Orchestrator、Worker 和 Reviewer 的模型调用都会计数；拒绝或因限额而未执行的工具不计工具次数，也不消耗工具动作。
-
-并行 Fan-out 前，调度器按剩余总量为同一批 Worker 分配互不重叠的工具与动作额度，防止并发超额；Fan-in 汇总实际消耗，未用额度可由后续批次继续使用。触发上限后，状态记录 `termination.source/reason`，工作流进入结构化 `blocked` 终态。时间检查发生在模型或工具调用之间，不能中断已经卡住的进程内 Python 代码或正在进行的外部调用。
+一次模型调用或实际工具执行各消耗 1 个动作单位，Token 暂不计入。并行 Worker 使用互不重叠的预算切片；触发任一上限后记录 `termination.source/reason` 并进入 `blocked`。时间限制在调用边界检查，不能强制中断正在执行的进程内代码。
 
 ## 项目结构
 
@@ -188,13 +225,14 @@ AgentG/
 ├── AGENTS.md
 ├── requirements.txt / pyproject.toml
 ├── Dockerfile / docker-compose.yml
+├── assets/branding/                # 主产品 Logo 与两组共 12 套品牌探索资产
 ├── src/multi_agent_system/
 │   ├── agents.py                 # Router、Orchestrator、Workers、Reviewer、工具
 │   ├── graph.py                  # 批次调度、Send、Fan-in、定向返工
 │   ├── state.py                  # 主状态、Worker 隔离状态、reducers
 │   ├── main.py                   # CLI
-│   ├── web_server.py             # FastAPI / SSE / 内存任务历史
-│   ├── storage.py                # Redis 最终快照
+│   ├── web_server.py             # FastAPI / SSE / Redis 或内存任务历史
+│   ├── storage.py                # Redis LangGraph checkpointer 与任务仓库
 │   ├── web_templates/index.html
 │   └── workspace/                # 不可信运行产物
 └── tests/                        # 单元、图、Web 和集成测试
@@ -202,154 +240,134 @@ AgentG/
 
 ## 启动方式
 
-AgentG 支持两种启动方式：本地 Python 环境运行，以及 Docker Compose 容器部署。两种方式都需要先在项目根目录创建 `.env` 并配置可用的模型 API。
+AgentG 支持本地 Python 与 Docker Compose 两种方式。命令均从项目根目录执行。
 
-### 公共配置
+### 1. 配置
 
-从 `.env.example` 创建本地配置文件：
+首次运行由用户本人从示例创建并填写配置，变量说明以 `.env.example` 为准：
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-编辑 `.env`：
+`.env` 是用户专属保护文件：仅用户本人可读取或修改，不得提交到 Git；项目 Agent 与自动化测试不得访问它。
 
-```ini
-OPENAI_API_KEY=your_api_key_here
-OPENAI_BASE_URL=https://api.deepseek.com/v1
-MODEL_NAME=deepseek-chat
-USE_REDIS=false
-REDIS_URL=redis://localhost:6379/0
-MAX_TOOL_ROUNDS=4
-MAX_TOOL_CALLS=12
-MAX_CONSECUTIVE_ERRORS=2
-MAX_RUN_SECONDS=120
-TOTAL_ACTION_BUDGET=40
-```
+### 2. 本地运行
 
-`.env` 是用户专属保护文件，只能由用户本人读取和修改。项目 Agent 不得读取、查看、打印、修改、覆盖、移动或删除该文件；自动化测试使用 mock 和临时环境变量，不依赖读取真实 `.env`。同时不要提交真实 `.env` 或 API Key。
-
-### 方式一：本地运行
-
-要求本机安装 Python 3.10+。以下命令在项目根目录执行。
-
-1. 创建虚拟环境并安装依赖：
+要求 Python 3.10+：
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-从旧版本升级时也需要重新执行安装命令，以安装已更名的 `ddgs` 搜索依赖；Docker 用户需要重新执行 `docker compose up --build -d` 构建镜像。
-
-2. 根据使用场景选择一种入口：
+启用 Redis 持久化时，先在独立终端启动服务（默认端口 `6379`）：
 
 ```powershell
-# 命令行交互模式
-.\.venv\Scripts\python.exe -m src.multi_agent_system.main
-
-# Web 服务模式
-.\.venv\Scripts\python.exe -m src.multi_agent_system.web_server
+redis-server
+# 或使用当前本机安装路径
+& 'D:\MisItems\Redis-x64-3.2.100\redis-server.exe'
+redis-cli -h 127.0.0.1 -p 6379 PING
 ```
 
-Web 服务启动后访问：<http://localhost:8000>。命令行模式会提示输入任务描述，并在终端持续输出各工作流节点的结果。
+选择启动入口：
 
-如需停止 Web 服务，在运行它的终端按 `Ctrl+C`。
+```powershell
+# CLI
+.\.venv\Scripts\python.exe -m src.multi_agent_system.main
 
-### 方式二：Docker Compose 容器部署
+# Web：http://localhost:8000
+.\.venv\Scripts\python.exe -m src.multi_agent_system.web_server
 
-要求本机安装 Docker Desktop 或其他支持 Docker Compose 的运行环境。Docker 镜像默认启动 Web 服务，容器内监听 `8000`，宿主机映射到 `8080`。
+# Web 开发热加载
+.\.venv\Scripts\python.exe -m src.multi_agent_system.web_server --reload
+```
 
-1. 确认项目根目录已经存在配置好的 `.env`。
+`--reload` 仅用于开发；它会重启进程，只有 Redis 模式可恢复运行中的任务。`/api/health` 返回 `redis_connected=true` 表示持久化连接正常。停止服务使用 `Ctrl+C`。
 
-2. 构建并在后台启动：
+### 3. Docker Compose
+
+要求 Docker Compose；宿主机访问 <http://localhost:8080>：
 
 ```powershell
 docker compose up --build -d
-```
-
-3. 查看容器状态和日志：
-
-```powershell
 docker compose ps
 docker compose logs -f agentg
-```
-
-启动成功后访问：<http://localhost:8080>。
-
-4. 停止并移除本项目容器：
-
-```powershell
 docker compose down
 ```
 
-`docker-compose.yml` 会把本地 `src/` 映射到容器 `/app/src`，因此源码修改会立即反映到容器文件系统；Python 进程是否自动加载修改取决于服务器启动配置，必要时执行 `docker compose restart agentg`。
+Redis 默认关闭；启用时使用容器地址 `redis://redis:6379/0`，长期保留数据需另配持久卷。工作目录必须先通过 `volumes` 挂载，并在界面填写容器内路径。
 
-Redis 默认关闭。若启用 Compose 中预留的 Redis 服务，需要取消 `redis` 服务和 `depends_on` 的注释，并将容器使用的地址配置为 `REDIS_URL=redis://redis:6379/0`。当前 Redis 只用于 CLI 结束后的最终状态快照，Docker 默认启动的是 Web 服务，因此通常保持 `USE_REDIS=false`。
+### 4. 验证
 
-### 验证安装
-
-本项目已在 Docs2KG / Python 3.11.9 环境中验证。测试不需要真实 API Key 或在线服务：
+测试使用 mock，不需要真实 API Key 或在线服务：
 
 ```powershell
 D:\anconda\envs\Docs2KG\python.exe -m pytest -q -p no:cacheprovider
-
-# 使用当前虚拟环境也可以运行
 .\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider
 ```
 
 ## Web API
 
+Web 提供任务 CRUD、SSE 执行流、会话管理和健康检查。任务详情包含增量消息、会话链、稳定状态字段 `outcome/is_active`，以及不暴露私有思维链的自然语言 `user_summary`。
+
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | `GET` | `/` | Web 页面 |
 | `GET` | `/api/health` | 健康检查 |
-| `POST` | `/api/tasks` | 创建任务，JSON 为 `{"task": "..."}` |
-| `GET` | `/api/tasks` | 列出内存任务历史 |
-| `GET` | `/api/tasks/{id}` | 获取路由、子任务、Worker 结果、资源用量和审查详情 |
-| `GET` | `/api/tasks/{id}/stream` | 启动任务并通过 SSE 推送节点事件 |
-| `DELETE` | `/api/tasks/{id}` | 删除内存任务记录 |
+| `POST` | `/api/tasks` | 创建新会话或续接会话；JSON 支持 `task`、可选 `parent_thread_id` 和 `workspace_path` |
+| `GET` | `/api/tasks` | 列出任务历史、`outcome` 与当前进程活跃状态；启用 Redis 时可跨服务重启读取 |
+| `GET` | `/api/tasks/{id}` | 获取增量消息、当前 Agent、`user_summary` 用户总结及 `conversation_turns` 会话链 |
+| `GET` | `/api/tasks/{id}/stream` | 启动新任务，或恢复 stale running/failed/interrupted 任务，并通过 SSE 推送事件 |
+| `DELETE` | `/api/tasks/{id}` | 删除任务记录与对应 checkpoints；运行中任务拒绝删除 |
+| `PATCH` | `/api/conversations/{id}` | 通过 `title` 重命名，或通过 `is_pinned` 置顶/取消置顶整个会话 |
+| `DELETE` | `/api/conversations/{id}` | 删除整个会话的所有轮次与 Redis checkpoints；运行中拒绝 |
 
-创建任务后必须连接 `/stream` 才会真正执行；同一任务只能启动一次。
+创建任务后需连接 `/stream` 才会执行。终态会话可追加新轮次；stale running/failed/interrupted 任务可使用原 `thread_id` 从 checkpoint 恢复。
+
+## 品牌与 Logo
+
+![AgentG Researcher Core](assets/branding/researcher-v2/researcher-v2-logo.svg)
+
+主产品 Logo 为 [`Researcher Core`](assets/branding/researcher-v2/researcher-v2-logo.svg)，参考 DeskPet `01-researcher-v2`。SVG 使用透明背景、`viewBox="0 0 100 100"` 和 `currentColor`；Web 左上角与主页面共用同一 Symbol。其余探索方案、预览和适用场景见 [`assets/branding/README.md`](assets/branding/README.md)。
 
 ## 已知限制与风险
 
-- `python_repl` 使用进程内 `exec()`，没有权限隔离或可抢占的硬超时；墙钟策略只能在调用边界检查，不能中断死循环，不能直接面向不可信公网用户。
+- `python_repl` 使用进程内 `exec()`，没有权限隔离或可抢占的硬超时；工作目录绑定也不是文件系统沙箱。墙钟策略只能在调用边界检查，不能中断死循环，不能直接面向不可信公网用户。
 - 四类 Agent 共享同一个 `ChatOpenAI` 实例和模型配置，不是独立进程或服务。
-- `MemorySaver`、Web `_task_store` 和 CLI Redis 快照尚未统一为可恢复持久化。
-- Redis 快照仍需完善 LangChain 消息对象的序列化适配。
-- `workspace/agent_generated_code_*.py` 会按序号覆盖，并发任务没有独立目录。
+- Redis 3.2 自定义 checkpointer 已覆盖当前同步图运行路径，尚未实现 LangGraph 异步 `aget_tuple/aput/alist` 接口；当前 CLI 与 Web 均使用同步 `stream`，不受影响。
+- 已提交检查点能够恢复，但节点内部发生外部副作用后、检查点提交前进程退出时，该节点可能重跑；写操作型工具仍需幂等键或事务补偿。
+- 会话上下文目前是最多 12 条的文本摘要链，尚未引入语义检索、自动压缩或长期记忆。
+- 工作目录目前通过文本框录入服务端可见的绝对路径。标准浏览器目录选择器不会向页面暴露真实绝对路径，因此尚未提供类似桌面 IDE 的原生“打开文件夹”对话框。
+- 开发热加载会重启 Web 进程；Redis 模式可依托 checkpoint 恢复 stale running 任务，但内存模式会丢失运行中任务记录。
 - Web 缺少认证、限流、取消、输入长度限制和人工审批。
-- 当前没有 `.gitignore`；初始化版本控制前应忽略 `.env`、`.venv/`、`__pycache__/` 和运行产物。
 
 ## 后续优化与可借鉴模式
 
 以下内容按本轮要求留待后续：
 
-1. 持久化恢复：统一 LangGraph checkpoint、Web 历史和 Redis。
+1. 工具幂等与事务补偿：为可能产生外部副作用的工具增加 invocation ID、去重和补偿记录。
 2. 硬超时与隔离：把 Python 工具迁移到可终止的受限子进程或容器。
 3. Token 预算：待确认模型供应商的可靠 usage 元数据后，再纳入统一预算。
 4. Human-in-the-loop：危险代码、文件写入、外部副作用和低置信度结果需审批。
-5. 工作区隔离：按 `thread_id/task_id` 建目录并限制文件访问范围。
-6. 可观测性与评测：补充 Token、返工原因、产物来源和跨运行指标聚合。
-7. 模型分层：Orchestrator/Reviewer 使用强模型，低风险 Worker 使用轻量模型。
-8. 动态 Agent 注册：专业 Agent 数量明显增加后再引入能力发现和按需加载。
-9. 多 Reviewer / Debate：只对安全、合规或高价值结果启用投票、仲裁。
-10. A2A：Agent 拆成跨团队、跨框架的独立远程服务后再引入。
-11. 工程治理：同步依赖、补 `.gitignore`、认证、限流、取消和生产部署配置。
-
-## 当前不建议直接采用的模式
-
-- **自由 Group Chat / Selector Chat**：容易重复工作、膨胀上下文、提高成本并使终止困难；仅适合特殊讨论或评审节点。
-- **全量 Handoff / Swarm**：更适合由不同角色长期接管用户会话；当前一次性任务由中央 Orchestrator 更可控。
-- **现在引入 A2A**：三个 Agent 仍在同一进程和代码库，引入服务发现、认证和网络一致性成本过早。
-- **默认多 Agent Debate**：延迟和成本较高，应按风险选择性启用，不能替代结构化 Reviewer。
+5. 工作区硬隔离：将 Python 工具迁移到只挂载选定目录的受限子进程或容器，添加规范路径检查、符号链接越界拒绝、超时和写操作审批。
+6. 工作目录录入体验：本地桌面版可接入原生文件夹选择器；纯 Web 版优先使用后端可见目录白名单、可选工作区列表和可读/可写状态提示，避免把浏览器文件上传误当成本地路径绑定。
+7. 安全文件工具：为列举、读取、搜索、写入和补丁提供定向工具，默认屏蔽 `.env` 和工作区外路径，逐步减少对通用 `exec()` 的依赖。
+8. 热加载下的任务连续性：开发服务重启前主动标记运行中任务为 interrupted，重启后自动重连 SSE 并从 Redis checkpoint 恢复。
+9. 长会话 UI：为超长时间线增加虚拟渲染、导航过滤、全局展开/收起、返回顶部/跳到最新结果和滚动锚定。
+10. 会话生命周期：增加取消当前轮、从任意历史轮次分支和孤立 checkpoint 定期回收。
+11. 可观测性与评测：补充 Token、返工原因、产物来源和跨运行指标聚合。
+12. 模型分层：Orchestrator/Reviewer 使用强模型，低风险 Worker 使用轻量模型。
+13. 动态 Agent 注册：专业 Agent 数量明显增加后再引入能力发现和按需加载。
+14. 多 Reviewer / Debate：只对安全、合规或高价值结果启用投票、仲裁。
+15. A2A：Agent 拆成跨团队、跨框架的独立远程服务后再引入。
+16. 工程治理：认证、限流、取消、Redis 数据卷和生产部署配置。
 
 ## 技术栈
 
 - LangGraph / LangChain / langchain-openai
 - Pydantic 结构化输出
 - FastAPI / Uvicorn / Jinja2 / SSE
-- Redis（当前为可选最终快照）
+- Redis（可选 LangGraph checkpoints、pending writes 与 Web 历史）
 - pandas / openpyxl / ddgs / BeautifulSoup
 - pytest

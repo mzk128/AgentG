@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-labelledby="title desc">
+  <title id="title">AgentG Worker Matrix</title>
+  <desc id="desc">A modular constellation forms the researcher's wavy bob and face.</desc>
+  <defs><circle id="module" r="3.7" fill="currentColor"/></defs>
+  <g fill="currentColor">
+    <circle cx="54" cy="24" r="7"/>
+    <use href="#module" x="39" y="29" opacity=".7"/>
+    <use href="#module" x="29" y="39"/>
+    <use href="#module" x="24" y="53"/>
+    <use href="#module" x="28" y="68"/>
+    <use href="#module" x="40" y="77"/>
+    <use href="#module" x="55" y="80"/>
+    <use href="#module" x="69" y="74"/>
+    <use href="#module" x="78" y="62"/>
+    <use href="#module" x="79" y="47"/>
+    <use href="#module" x="72" y="34"/>
+    <circle cx="43" cy="51" r="2.8"/>
+    <circle cx="61" cy="51" r="2.8"/>
+    <circle cx="52" cy="66" r="3" opacity=".55"/>
+  </g>
+</svg>

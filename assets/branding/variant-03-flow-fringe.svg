@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-labelledby="title desc">
+  <title id="title">AgentG Flow Fringe</title>
+  <desc id="desc">Parallel orchestration lines sweep like the researcher's fringe and converge into a result.</desc>
+  <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="61" cy="20" r="8" stroke-width="4"/>
+    <path d="M25 68c8 9 20 14 32 12 14-2 23-12 24-27" stroke-width="4"/>
+    <path d="M25 58c18 0 35-10 43-27" stroke-width="3.5"/>
+    <path d="M25 49c15 0 28-7 36-18" stroke-width="3.5" opacity=".82"/>
+    <path d="M28 40c10-1 19-5 26-12" stroke-width="3.5" opacity=".62"/>
+    <path d="M41 71c9 3 19 1 26-5" stroke-width="2.5" opacity=".55"/>
+  </g>
+  <circle cx="74" cy="50" r="4" fill="currentColor"/>
+</svg>

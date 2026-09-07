@@ -27,6 +27,8 @@ class MultiAgentState(TypedDict, total=False):
 
     messages: Annotated[List[Any], add_messages]
     task: str
+    conversation_context: list[Dict[str, str]]
+    workspace_path: str
     routing: Dict[str, Any]
     plan: str
     subtasks: list[Dict[str, Any]]
@@ -56,6 +58,7 @@ class WorkerInputState(TypedDict, total=False):
     task_id: str
     agent_type: str
     objective: str
+    workspace_path: str
     upstream_results: list[Dict[str, Any]]
     allowed_tools: list[str]
     output_format: str
@@ -69,11 +72,19 @@ class WorkerInputState(TypedDict, total=False):
     budget_quota: int
 
 
-def create_initial_state(task: str, thread_id: str) -> MultiAgentState:
+def create_initial_state(
+    task: str,
+    thread_id: str,
+    *,
+    conversation_context: list[Dict[str, str]] | None = None,
+    workspace_path: str = "",
+) -> MultiAgentState:
     """为 CLI、Web 和测试创建一致的初始状态。"""
     return {
         "messages": [],
         "task": task,
+        "conversation_context": list(conversation_context or []),
+        "workspace_path": workspace_path,
         "routing": {},
         "plan": "",
         "subtasks": [],

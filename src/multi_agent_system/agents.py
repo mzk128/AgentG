@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import io
 import json
+import os
+import re
 import sys
+import threading
 import time
 import traceback
 from enum import Enum
@@ -21,23 +24,34 @@ from .state import MultiAgentState, WorkerInputState
 # ---------------------------------------------------------------------------
 # 工具
 # ---------------------------------------------------------------------------
+_PYTHON_EXECUTION_LOCK = threading.RLock()
+
+
 @tool
-def python_repl(code: str) -> str:
+def python_repl(code: str, workspace_path: str = "") -> str:
     """执行 Python 代码并返回 stdout 或报错堆栈。
 
     适用于数据处理、计算、图表生成或文件读写。该工具直接使用进程内
-    exec，仅应在可信环境使用。
+    exec，仅应在可信环境使用。绑定工作目录时，相对路径从该目录解析。
     """
-    old_stdout = sys.stdout
-    redirected_output = sys.stdout = io.StringIO()
-    try:
-        exec(code, globals())
-        output = redirected_output.getvalue()
-        return output if output.strip() else "代码执行成功，无标准输出。"
-    except Exception:
-        return f"执行报错:\n{traceback.format_exc()}"
-    finally:
-        sys.stdout = old_stdout
+    with _PYTHON_EXECUTION_LOCK:
+        old_stdout = sys.stdout
+        old_cwd = os.getcwd()
+        redirected_output = sys.stdout = io.StringIO()
+        try:
+            if workspace_path:
+                resolved_workspace = os.path.realpath(workspace_path)
+                if not os.path.isdir(resolved_workspace):
+                    return f"执行报错: 工作目录不存在或不是目录: {workspace_path}"
+                os.chdir(resolved_workspace)
+            exec(code, globals())
+            output = redirected_output.getvalue()
+            return output if output.strip() else "代码执行成功，无标准输出。"
+        except Exception:
+            return f"执行报错:\n{traceback.format_exc()}"
+        finally:
+            os.chdir(old_cwd)
+            sys.stdout = old_stdout
 
 
 def _create_ddgs_client(timeout: int = 15) -> Any:
@@ -292,6 +306,18 @@ class SubTaskSpec(BaseModel):
             return [stripped] if stripped else []
         return value
 
+    @field_validator("output_format", mode="before")
+    @classmethod
+    def normalise_single_item_output_format(cls, value: Any) -> Any:
+        """兼容模型把字符串型 output_format 输出成单元素字符串数组。"""
+        if (
+            isinstance(value, list)
+            and len(value) == 1
+            and isinstance(value[0], str)
+        ):
+            return value[0]
+        return value
+
 
 class OrchestrationPlan(BaseModel):
     summary: str = Field(description="总体执行策略")
@@ -509,11 +535,66 @@ def _terminated_update(source: str, reason: str) -> MultiAgentState:
 # ---------------------------------------------------------------------------
 # 路由与编排
 # ---------------------------------------------------------------------------
+def _normalise_routing_for_task(
+    task: str, decision: TaskRoutingDecision
+) -> dict[str, Any]:
+    """Apply narrow capability guards after the model's routing decision.
+
+    Multi-city weather requests contain independent queries and must reach the
+    Orchestrator.  A single-city current-weather request belongs to Research,
+    never Code/Data.  Other domains continue to use the model decision.
+    """
+    routing = decision.model_dump(mode="json")
+    lowered = task.lower()
+    is_weather = "天气" in task or "weather" in lowered
+    is_current_weather = bool(
+        re.search(r"(?:当前(?:的)?|实时)天气", task)
+        or "current weather" in lowered
+    )
+    has_multiple_cities = bool(
+        re.search(r"(?:三|3|多个|多座|若干|几(?:个|座)?)\s*(?:个|座)?城市", task)
+        or re.search(r"\b(?:three|3|multiple|several)\s+cities\b", lowered)
+        or ("随机" in task and "城市" in task)
+    )
+
+    if is_weather and has_multiple_cities:
+        original = routing.get("reason", "")
+        routing.update(
+            {
+                "route": "team",
+                "worker_type": WorkerType.SYNTHESIS.value,
+                "reason": (
+                    "规则校正：多城市天气包含可并行的独立查询，需要 Orchestrator 编排。"
+                    f"原模型判断：{original}"
+                ),
+            }
+        )
+    elif (
+        is_current_weather
+        and routing.get("route") == "simple"
+        and routing.get("worker_type") != WorkerType.RESEARCH.value
+    ):
+        original = routing.get("reason", "")
+        routing.update(
+            {
+                "worker_type": WorkerType.RESEARCH.value,
+                "reason": (
+                    "规则校正：天气查询必须交给具有 current_weather 权限的 "
+                    f"ResearchAgent。原模型判断：{original}"
+                ),
+            }
+        )
+    return routing
+
+
 def task_router_node(state: MultiAgentState, llm: ChatOpenAI) -> MultiAgentState:
     stop_reason = resource_stop_reason(state)
     if stop_reason:
         return _terminated_update("TaskRouter", stop_reason)
     task = state.get("task", "")
+    conversation_context = state.get("conversation_context", [])
+    context_text = json.dumps(conversation_context, ensure_ascii=False)
+    workspace_path = state.get("workspace_path", "")
     prompt = (
         "你是任务分流 Agent。判断任务是否可由一个专业 Worker 独立完成。"
         "请严格返回符合指定结构的 json 对象，不要输出对象之外的内容。"
@@ -522,12 +603,16 @@ def task_router_node(state: MultiAgentState, llm: ChatOpenAI) -> MultiAgentState
         "\"reason\":\"任务包含多个可并行子问题\"}。"
         "单一步骤、单一领域且无独立并行子问题时选择 simple；"
         "需要多个专业领域、多个可并行子问题或显式依赖链时选择 team。"
+        "多个城市的天气查询包含可并行子问题，必须选择 team；"
+        "单城市天气查询若选择 simple，worker_type 必须是 research。"
         "simple 时从 research、code、data、synthesis 中选择 worker_type。\n"
-        f"任务：{task}"
+        f"必要会话上下文：{context_text}\n"
+        f"绑定工作目录：{workspace_path or '未绑定'}\n"
+        f"当前任务：{task}"
     )
     structured_llm = llm.with_structured_output(TaskRoutingDecision, method="json_mode")
     decision = structured_llm.invoke([HumanMessage(content=prompt)])
-    routing = decision.model_dump(mode="json")
+    routing = _normalise_routing_for_task(task, decision)
     return {
         "routing": routing,
         "resource_events": [_model_event("task_router")],
@@ -546,10 +631,18 @@ def prepare_simple_task_node(state: MultiAgentState) -> MultiAgentState:
     routing = state.get("routing", {})
     worker_type = _worker_type(routing.get("worker_type"))
     task = state.get("task", "")
+    conversation_context = state.get("conversation_context", [])
+    objective = task
+    if conversation_context:
+        objective = (
+            f"当前任务：{task}\n"
+            f"必要会话上下文："
+            f"{json.dumps(conversation_context, ensure_ascii=False)}"
+        )
     subtask = {
         "id": "simple-1",
         "agent_type": worker_type.value,
-        "objective": task,
+        "objective": objective,
         "dependencies": [],
         "allowed_tools": _default_tool_names(worker_type),
         "output_format": "直接面向用户的完整答案",
@@ -567,6 +660,9 @@ def orchestrator_node(state: MultiAgentState, llm: ChatOpenAI) -> MultiAgentStat
     if stop_reason:
         return _terminated_update("Orchestrator", stop_reason)
     task = state.get("task", "")
+    conversation_context = state.get("conversation_context", [])
+    context_text = json.dumps(conversation_context, ensure_ascii=False)
+    workspace_path = state.get("workspace_path", "")
     prompt = (
         "你是 Orchestrator。把复杂任务拆成可调度的结构化子任务。"
         "请严格返回符合指定结构的 json 对象，不要输出对象之外的内容。"
@@ -574,6 +670,7 @@ def orchestrator_node(state: MultiAgentState, llm: ChatOpenAI) -> MultiAgentStat
         "id、agent_type、objective、dependencies、allowed_tools、output_format、"
         "acceptance_criteria。dependencies、allowed_tools、acceptance_criteria 必须是 "
         "json 数组，即使只有一项也不得输出为字符串。"
+        "output_format 必须是 json 字符串，即使描述 JSON 对象格式也禁止输出为数组。"
         "专业 Agent 只有 research、code、data、synthesis。"
         "无依赖的任务应保持彼此独立以便并行；有前置结果时用 dependencies 指定任务 ID。"
         "每个任务必须给出自足 objective、最小 allowed_tools、output_format 和 acceptance_criteria。"
@@ -581,7 +678,9 @@ def orchestrator_node(state: MultiAgentState, llm: ChatOpenAI) -> MultiAgentStat
         "current_weather，不要使用 web_search；code/data 只能使用 python_repl；"
         "synthesis 不使用工具。"
         "安排 synthesis 汇总必要上游结果。\n"
-        f"原始任务：{task}"
+        f"必要会话上下文：{context_text}\n"
+        f"绑定工作目录：{workspace_path or '未绑定'}\n"
+        f"当前任务：{task}"
     )
     structured_llm = llm.with_structured_output(OrchestrationPlan, method="json_mode")
     plan_output = structured_llm.invoke([HumanMessage(content=prompt)])
@@ -613,6 +712,7 @@ def _run_worker(
 ) -> MultiAgentState:
     task_id = state.get("task_id", "unknown")
     objective = state.get("objective", "")
+    workspace_path = state.get("workspace_path", "")
     upstream_results = state.get("upstream_results", [])
     allowed_tool_names = set(state.get("allowed_tools", []))
     output_format = state.get("output_format", "清晰文本")
@@ -634,11 +734,17 @@ def _run_worker(
         f"你是 {worker_type.value.title()}Agent，职责是{WORKER_DESCRIPTIONS[worker_type]}。",
         "你只能处理当前子任务，不得假设自己看到了完整会话或其他无关状态。",
         f"任务目标：{objective}",
+        f"绑定工作目录：{workspace_path or '未绑定'}",
         f"必要上游结果：{json.dumps(upstream_results, ensure_ascii=False)}",
         f"允许工具：{sorted(allowed_tool_names) if allowed_tool_names else '无'}",
         f"输出格式：{output_format}",
         f"验收标准：{json.dumps(acceptance_criteria, ensure_ascii=False)}",
+        "禁止读取、打印、修改、移动或删除任何 .env 文件。",
     ]
+    if workspace_path:
+        prompt_parts.append(
+            "所有文件读写应限制在绑定工作目录内，不得主动使用绝对路径越界。"
+        )
     if revision_feedback:
         prompt_parts.append(f"本次定向返工反馈：{revision_feedback}")
     prompt = "\n".join(prompt_parts)
@@ -731,7 +837,9 @@ def _run_worker(
                         if tool_name == python_repl.name:
                             code = str(tool_args.get("code", ""))
                             code_snippets.append(code)
-                            tool_output = python_repl.invoke({"code": code})
+                            tool_output = python_repl.invoke(
+                                {"code": code, "workspace_path": workspace_path}
+                            )
                             result_parts.append(
                                 f"🔧 [执行代码]\n{code}\n💻 [运行结果]\n{tool_output}"
                             )
@@ -795,7 +903,15 @@ def _run_worker(
     if termination_reason:
         result_parts.append(f"资源终止：{termination_reason}")
 
-    result_text = "\n\n".join(part for part in result_parts if part).strip()
+    trace_text = "\n\n".join(part for part in result_parts if part).strip()
+    result_text = final_content.strip()
+    if termination_reason:
+        termination_text = f"资源终止：{termination_reason}"
+        result_text = (
+            f"{result_text}\n\n{termination_text}" if result_text else termination_text
+        )
+    elif not result_text and error_logs:
+        result_text = "子任务未生成可交付结果；请查看结构化错误和工具观察。"
     status = "terminated" if termination_reason else ("error" if error_logs else "completed")
     usage = {
         "model_calls": model_calls,
@@ -833,7 +949,7 @@ def _run_worker(
             AIMessage(
                 content=(
                     f"[{worker_type.value.title()}Agent:{task_id}] attempt={attempt}\n"
-                    f"{result_text}"
+                    f"{trace_text or result_text}"
                 )
             )
         ],
@@ -880,6 +996,22 @@ def reviewer_node(state: MultiAgentState, llm: ChatOpenAI) -> MultiAgentState:
         return update
     subtasks = state.get("subtasks", [])
     latest_results = latest_worker_results(state.get("worker_results", []))
+    deliverables = {
+        task_id: {
+            "agent_type": result.get("agent_type"),
+            "status": result.get("status"),
+            "content": result.get("content", ""),
+        }
+        for task_id, result in latest_results.items()
+    }
+    diagnostics = {
+        task_id: {
+            "tool_observations": result.get("tool_observations", []),
+            "usage": result.get("usage", {}),
+            "termination_reason": result.get("termination_reason"),
+        }
+        for task_id, result in latest_results.items()
+    }
     prompt = (
         "你是严格的 Reviewer。根据原始任务、结构化子任务、各 Worker 最新结果和最终输出审查。"
         "请严格返回符合指定结构的 json 对象，不要输出对象之外的内容。"
@@ -887,10 +1019,14 @@ def reviewer_node(state: MultiAgentState, llm: ChatOpenAI) -> MultiAgentState:
         "必须返回 status=pass、revise 或 blocked。"
         "revise 时 revision_targets 只能填写需要返工的子任务 ID；"
         "不要让无关 Worker 重做。若上游变更会影响综合结果，应同时包含相关 synthesis 任务。\n"
+        "可交付内容中的 content 是待验收产物；工具诊断和错误记录不是面向用户的输出，"
+        "只能用于判断事实依据、工具失败或资源终止，不得要求把执行代码、调用过程或诊断日志"
+        "复制到 content。\n"
         f"原始任务：{state.get('task', '')}\n"
         f"执行计划：{state.get('plan', '')}\n"
         f"子任务：{json.dumps(subtasks, ensure_ascii=False)}\n"
-        f"最新 Worker 结果：{json.dumps(latest_results, ensure_ascii=False)}\n"
+        f"可交付内容：{json.dumps(deliverables, ensure_ascii=False)}\n"
+        f"工具诊断：{json.dumps(diagnostics, ensure_ascii=False)}\n"
         f"最终输出：{state.get('execution_result', '')}\n"
         f"错误记录：{json.dumps(state.get('error_logs', []), ensure_ascii=False)}"
     )

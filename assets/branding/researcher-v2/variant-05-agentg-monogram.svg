@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-labelledby="title desc">
+  <title id="title">AgentG Bob Monogram</title>
+  <desc id="desc">A compact G route sits within the researcher's side-parted bob silhouette.</desc>
+  <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M24 49c0-17 12-28 29-28 18 0 29 12 29 29v8c0 15-11 25-29 25S24 73 24 58v-9Z" stroke-width="4"/>
+    <path d="M27 43c11-1 20-7 25-18 5 9 14 13 28 12" stroke-width="3.5" opacity=".7"/>
+    <path d="M68 50c-4-7-12-10-20-8-10 3-15 13-12 22 3 10 14 14 24 10 6-3 9-8 9-14H54" stroke-width="4"/>
+    <path d="m29 37-7 7 6 3M77 36l6 6-6 4" stroke-width="3.5"/>
+  </g>
+  <circle cx="69" cy="60" r="4" fill="currentColor"/>
+</svg>

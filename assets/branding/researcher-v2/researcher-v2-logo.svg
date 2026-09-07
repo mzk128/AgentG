@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-labelledby="title desc">
+  <title id="title">AgentG Researcher Core</title>
+  <desc id="desc">A minimal round researcher face framed by a side-parted wavy bob.</desc>
+  <g fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M26 49c0-17 11-28 27-28 17 0 28 11 28 28v9c0 15-11 25-28 25S26 73 26 58v-9Z"/>
+    <path d="M27 44c12-1 21-8 25-19 5 9 14 14 27 13"/>
+    <path d="m30 36-9 8 7 3M76 34l7 7-6 4"/>
+  </g>
+  <g fill="currentColor">
+    <circle cx="44" cy="54" r="3.5"/>
+    <circle cx="63" cy="54" r="3.5"/>
+    <path d="M46 69c5 3 10 3 15 0-2 5-12 5-15 0Z"/>
+  </g>
+</svg>

@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>AgentG — Logo Design Exploration</title>
+  <style>
+    :root {
+      color-scheme:dark;
+      --bg:#0c0e13; --panel:#141821; --panel-2:#1a1f2a; --text:#f2f4fa;
+      --muted:#8b93a7; --line:#2a3140; --accent:#7b8cff; --accent-2:#39d6d2;
+      --shadow:rgba(0,0,0,.28);
+    }
+    :root[data-theme="light"] {
+      color-scheme:light;
+      --bg:#f4f5f8; --panel:#fff; --panel-2:#eef1f7; --text:#141722;
+      --muted:#687084; --line:#d9deea; --accent:#596fe7; --accent-2:#149d9c;
+      --shadow:rgba(32,43,72,.12);
+    }
+    * { box-sizing:border-box; }
+    html { scroll-behavior:smooth; }
+    body {
+      margin:0; min-height:100vh; background:var(--bg); color:var(--text);
+      font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+      -webkit-font-smoothing:antialiased;
+    }
+    body::before {
+      content:""; position:fixed; inset:0; pointer-events:none; opacity:.18;
+      background:radial-gradient(circle at 75% 4%,rgba(123,140,255,.26),transparent 32%),
+                 radial-gradient(circle at 12% 80%,rgba(57,214,210,.12),transparent 28%);
+    }
+    a { color:inherit; }
+    .page { position:relative; width:min(1240px,calc(100% - 40px)); margin:auto; padding:72px 0 96px; }
+    header { display:grid; grid-template-columns:1fr auto; gap:32px; align-items:end; margin-bottom:48px; }
+    .eyebrow { color:var(--accent-2); font:600 11px/1.2 ui-monospace,SFMono-Regular,Consolas,monospace; letter-spacing:.18em; text-transform:uppercase; }
+    h1 { margin:13px 0 12px; font-size:clamp(48px,8vw,88px); font-weight:300; letter-spacing:-.055em; }
+    header p { max-width:680px; margin:0; color:var(--muted); font-size:15px; line-height:1.75; }
+    .controls { display:flex; align-items:center; gap:8px; padding:6px; border:1px solid var(--line); border-radius:12px; background:var(--panel); }
+    button { border:0; border-radius:8px; padding:9px 13px; color:var(--muted); background:transparent; cursor:pointer; }
+    button.active { color:var(--text); background:var(--panel-2); }
+    .grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:18px; }
+    .card {
+      position:relative; min-height:430px; overflow:hidden; border:1px solid var(--line); border-radius:20px;
+      background:linear-gradient(155deg,var(--panel),color-mix(in srgb,var(--panel) 84%,var(--accent) 16%));
+      box-shadow:0 20px 50px var(--shadow); transition:transform .45s cubic-bezier(.16,1,.3,1),border-color .3s;
+    }
+    .card:hover { transform:translateY(-5px); border-color:color-mix(in srgb,var(--accent) 55%,var(--line)); }
+    .card.recommended::after { content:"RECOMMENDED"; position:absolute; top:18px; right:18px; color:var(--accent-2); font:600 9px/1 ui-monospace,monospace; letter-spacing:.12em; }
+    .canvas { height:250px; display:grid; place-items:center; color:var(--accent); }
+    .canvas svg { width:142px; height:142px; filter:drop-shadow(0 14px 24px rgba(69,83,160,.2)); transition:transform .5s cubic-bezier(.16,1,.3,1); }
+    .card:hover .canvas svg { transform:scale(1.055) rotate(-1deg); }
+    .details { padding:0 24px 25px; }
+    .number { color:var(--accent-2); font:500 10px/1 ui-monospace,monospace; letter-spacing:.1em; }
+    h2 { margin:10px 0 5px; font-size:19px; font-weight:600; letter-spacing:-.02em; }
+    .pattern { color:var(--muted); font:500 10px/1.4 ui-monospace,monospace; text-transform:uppercase; letter-spacing:.08em; }
+    .details p { min-height:58px; margin:15px 0 18px; color:var(--muted); font-size:13px; line-height:1.65; }
+    .sizes { display:flex; align-items:end; gap:12px; min-height:64px; padding-top:16px; border-top:1px solid var(--line); color:var(--text); }
+    .sizes svg:nth-child(1) { width:16px; height:16px; }
+    .sizes svg:nth-child(2) { width:32px; height:32px; }
+    .sizes svg:nth-child(3) { width:64px; height:64px; }
+    .download { display:inline-flex; margin-top:18px; color:var(--accent); font:600 11px/1 ui-monospace,monospace; text-decoration:none; }
+    .download:hover { text-decoration:underline; }
+    footer { display:flex; justify-content:space-between; gap:24px; margin-top:54px; padding-top:24px; border-top:1px solid var(--line); color:var(--muted); font:11px/1.7 ui-monospace,monospace; }
+    .hidden-symbols { position:absolute; width:0; height:0; overflow:hidden; }
+    @media (max-width:960px) { .grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+    @media (max-width:650px) { .page { width:min(100% - 24px,1240px); padding-top:42px; } header { grid-template-columns:1fr; } .controls { justify-self:start; } .grid { grid-template-columns:1fr; } footer { flex-direction:column; } }
+  </style>
+</head>
+<body>
+  <svg class="hidden-symbols" aria-hidden="true">
+    <defs>
+      <symbol id="logo-1" viewBox="0 0 100 100">
+        <g fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><circle cx="55" cy="21" r="9"/><path d="M29 48c0-14 10-24 25-24 14 0 25 10 25 25v9c0 15-10 25-25 25S29 73 29 58V48Z"/><path d="M31 45c11-1 22-7 29-16 1 8 7 14 17 17"/></g><g fill="currentColor"><circle cx="45" cy="55" r="3.5"/><circle cx="64" cy="55" r="3.5"/><path d="M47 69c5 3 10 3 15 0-2 5-12 5-15 0Z"/></g>
+      </symbol>
+      <symbol id="logo-2" viewBox="0 0 100 100">
+        <g fill="currentColor"><circle cx="55" cy="20" r="7"/><circle cx="40" cy="27" r="3.5" opacity=".55"/><circle cx="69" cy="30" r="3.5" opacity=".55"/><circle cx="33" cy="40" r="3.5"/><circle cx="27" cy="52" r="3.5"/><circle cx="29" cy="65" r="3.5"/><circle cx="39" cy="75" r="3.5"/><circle cx="53" cy="79" r="3.5"/><circle cx="67" cy="74" r="3.5"/><circle cx="75" cy="64" r="3.5"/><circle cx="75" cy="54" r="3.5"/><circle cx="62" cy="54" r="3.5"/><circle cx="55" cy="63" r="3.5" opacity=".55"/><circle cx="43" cy="51" r="2.5" opacity=".65"/></g>
+      </symbol>
+      <symbol id="logo-3" viewBox="0 0 100 100">
+        <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="61" cy="20" r="8" stroke-width="4"/><path d="M25 68c8 9 20 14 32 12 14-2 23-12 24-27" stroke-width="4"/><path d="M25 58c18 0 35-10 43-27" stroke-width="3.5"/><path d="M25 49c15 0 28-7 36-18" stroke-width="3.5" opacity=".82"/><path d="M28 40c10-1 19-5 26-12" stroke-width="3.5" opacity=".62"/><path d="M41 71c9 3 19 1 26-5" stroke-width="2.5" opacity=".55"/></g><circle cx="74" cy="50" r="4" fill="currentColor"/>
+      </symbol>
+      <symbol id="logo-4" viewBox="0 0 100 100">
+        <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="51" cy="54" r="28" stroke-width="4"/><circle cx="58" cy="19" r="8" stroke-width="4"/><path d="M58 28v10M58 38 39 49M58 38l18 12M58 38 42 67M58 38l15 29" stroke-width="2.5" opacity=".58"/><path d="M30 43c12-2 22-8 29-17" stroke-width="4"/></g><g fill="currentColor"><circle cx="39" cy="49" r="4.5"/><circle cx="76" cy="50" r="4.5"/><circle cx="42" cy="67" r="4.5"/><circle cx="73" cy="67" r="4.5"/></g>
+      </symbol>
+      <symbol id="logo-5" viewBox="0 0 100 100">
+        <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="22" y="28" width="58" height="54" rx="22" stroke-width="4"/><circle cx="57" cy="19" r="8" stroke-width="4"/><path d="M71 47c-5-8-14-12-23-9-11 3-17 15-13 25 4 11 17 16 28 10 6-3 9-8 9-14H56" stroke-width="4"/><path d="M31 43c10-1 20-6 27-14" stroke-width="3" opacity=".65"/></g><g fill="currentColor"><circle cx="72" cy="59" r="4"/><circle cx="35" cy="63" r="3" opacity=".55"/></g>
+      </symbol>
+      <symbol id="logo-6" viewBox="0 0 100 100">
+        <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M53 25 37 43M53 25l18 20M37 43l-7 20M37 43l16 26M71 45l-18 24M71 45l5 18M30 63l23 6M53 69l23-6" stroke-width="2.5" opacity=".55"/><path d="M78 69c-6 12-21 17-34 12-13-5-21-18-18-31" stroke-width="4"/><path d="m22 54 4-6 6 4" stroke-width="4"/><path d="M33 38c8-2 15-7 20-14" stroke-width="3.5"/></g><g fill="currentColor"><circle cx="53" cy="23" r="8"/><circle cx="37" cy="43" r="5"/><circle cx="71" cy="45" r="5"/><circle cx="30" cy="63" r="4" opacity=".68"/><circle cx="53" cy="69" r="5"/><circle cx="76" cy="63" r="4" opacity=".68"/></g>
+      </symbol>
+    </defs>
+  </svg>
+  <main class="page">
+    <header>
+      <div>
+        <div class="eyebrow">AgentG / Identity System 01</div>
+        <h1>Orchestrate with character.</h1>
+        <p>以 Pei 研究员的高发髻与侧扫刘海为人物锚点，将任务路由、专业 Worker、Fan-out/Fan-in 和 Reviewer 闭环压缩为六个可缩放的矢量方向。</p>
+      </div>
+      <div class="controls" role="group" aria-label="主题">
+        <button type="button" class="active" data-theme="dark">深色</button>
+        <button type="button" data-theme="light">浅色</button>
+      </div>
+    </header>
+    <section class="grid" id="logoGrid" aria-label="AgentG Logo 设计方案"></section>
+    <footer><span>EDITABLE SVG · CURRENTCOLOR · VIEWBOX 0 0 100 100</span><span>LOGO GENERATOR · 2026</span></footer>
+  </main>
+  <script>
+    const concepts = [
+      {id:1,title:'Pei Orchestrator',pattern:'Pure geometric · Recommended',file:'agentg-logo.svg',text:'用最少线条保留高发髻、圆角脸与侧扫刘海；刘海同时是一条由左至右收敛的任务路由。小尺寸辨识度最佳。',recommended:true},
+      {id:2,title:'Worker Glyph',pattern:'Dot matrix',file:'variant-02-worker-glyph.svg',text:'离散节点组成抽象 G，顶部主节点对应 Orchestrator，其余节点对应可插拔的专业 Worker。'},
+      {id:3,title:'Flow Fringe',pattern:'Line system',file:'variant-03-flow-fringe.svg',text:'多条平行任务流沿 Pei 刘海方向汇聚，强调依赖调度、并行执行以及最终结果收敛。'},
+      {id:4,title:'Fan-out Halo',pattern:'Dots + geometry',file:'variant-04-fanout-halo.svg',text:'稳定圆角边界代表隔离上下文，发髻节点向四个 Worker 扇出，直观表达 Orchestrator–Worker。'},
+      {id:5,title:'Graph Monogram',pattern:'Lines + geometry',file:'variant-05-graph-monogram.svg',text:'圆角容器、G 形路径与图节点更偏开发者工具气质，适合产品图标、文档页和仓库头像。'},
+      {id:6,title:'Review Loop',pattern:'Node network · Layered',file:'variant-06-review-loop.svg',text:'不对称节点网络形成友好脸部，外侧回箭头代表 Reviewer 只将修订目标送回相关 Worker。'}
+    ];
+    const useLogo = id => `<svg aria-hidden="true" viewBox="0 0 100 100"><use href="#logo-${id}"></use></svg>`;
+    document.getElementById('logoGrid').innerHTML = concepts.map((item,index) => `
+      <article class="card ${item.recommended?'recommended':''}">
+        <div class="canvas">${useLogo(item.id)}</div>
+        <div class="details">
+          <div class="number">0${index+1}</div><h2>${item.title}</h2><div class="pattern">${item.pattern}</div>
+          <p>${item.text}</p>
+          <div class="sizes" aria-label="16、32、64 像素预览">${useLogo(item.id)}${useLogo(item.id)}${useLogo(item.id)}</div>
+          <a class="download" href="${item.file}" download>DOWNLOAD SVG ↘</a>
+        </div>
+      </article>`).join('');
+    document.querySelectorAll('[data-theme]').forEach(button => button.addEventListener('click', () => {
+      document.documentElement.dataset.theme = button.dataset.theme;
+      document.querySelectorAll('[data-theme]').forEach(item => item.classList.toggle('active',item===button));
+    }));
+  </script>
+</body>
+</html>

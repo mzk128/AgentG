@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-labelledby="title desc">
+  <title id="title">AgentG Fan-out Halo</title>
+  <desc id="desc">An orchestrator bun routes work to four specialist nodes inside a stable head boundary.</desc>
+  <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="51" cy="54" r="28" stroke-width="4"/>
+    <circle cx="58" cy="19" r="8" stroke-width="4"/>
+    <path d="M58 28v10M58 38 39 49M58 38l18 12M58 38 42 67M58 38l15 29" stroke-width="2.5" opacity=".58"/>
+    <path d="M30 43c12-2 22-8 29-17" stroke-width="4"/>
+  </g>
+  <g fill="currentColor">
+    <circle cx="39" cy="49" r="4.5"/>
+    <circle cx="76" cy="50" r="4.5"/>
+    <circle cx="42" cy="67" r="4.5"/>
+    <circle cx="73" cy="67" r="4.5"/>
+  </g>
+</svg>

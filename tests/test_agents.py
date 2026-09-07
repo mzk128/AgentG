@@ -1,4 +1,5 @@
 import json
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -12,6 +13,7 @@ from multi_agent_system.agents import (
     WorkerType,
     WORKER_TOOLBOX,
     _normalise_subtasks,
+    _normalise_routing_for_task,
     code_worker_node,
     current_weather,
     data_worker_node,
@@ -65,6 +67,15 @@ class TestPythonRepl:
 
     def test_no_stdout_returns_success(self):
         assert "代码执行成功" in python_repl.invoke({"code": "x = 42"})
+
+    def test_bound_workspace_controls_relative_working_directory(self, tmp_path):
+        original_cwd = os.getcwd()
+        result = python_repl.invoke(
+            {"code": "import os; print(os.getcwd())", "workspace_path": str(tmp_path)}
+        )
+
+        assert str(tmp_path).lower() in result.strip().lower()
+        assert os.getcwd() == original_cwd
 
 
 class TestWebSearch:
@@ -214,6 +225,30 @@ class TestStructuredModels:
         assert spec.allowed_tools == ["web_search"]
         assert spec.acceptance_criteria == ["包含温度和天气状况"]
 
+    def test_subtask_unwraps_single_item_output_format_array(self):
+        spec = SubTaskSpec.model_validate(
+            {
+                "id": "weather-1",
+                "agent_type": "research",
+                "objective": "query weather",
+                "output_format": [
+                    "JSON 对象，包含 city、temperature、condition 字段"
+                ],
+            }
+        )
+        assert spec.output_format == "JSON 对象，包含 city、temperature、condition 字段"
+
+    def test_subtask_rejects_multi_item_output_format_array(self):
+        with pytest.raises(Exception):
+            SubTaskSpec.model_validate(
+                {
+                    "id": "weather-1",
+                    "agent_type": "research",
+                    "objective": "query weather",
+                    "output_format": ["JSON 对象", "纯文本"],
+                }
+            )
+
     def test_review_confidence_range(self):
         with pytest.raises(Exception):
             ReviewDecision(status="pass", feedback="ok", confidence=1.5)
@@ -250,6 +285,41 @@ class TestTaskRouter:
         assert base_state["task"] in prompt.content
         assert "json" in prompt.content.lower()
         assert "必须使用 route，禁止用 type 代替" in prompt.content
+        assert "多个城市的天气查询" in prompt.content
+
+    def test_multi_city_weather_is_corrected_to_team(self, base_state):
+        base_state["task"] = "请查询当前的天气状况，查询地点可以为随机生成三个城市。"
+        llm = _structured_llm(
+            TaskRoutingDecision(
+                route="simple", worker_type="data", reason="single domain"
+            )
+        )
+
+        result = task_router_node(base_state, llm)
+
+        assert result["routing"]["route"] == "team"
+        assert result["routing"]["worker_type"] == "synthesis"
+        assert "规则校正" in result["routing"]["reason"]
+
+    def test_single_city_weather_is_corrected_to_research(self, base_state):
+        decision = TaskRoutingDecision(
+            route="simple", worker_type="data", reason="single query"
+        )
+
+        routing = _normalise_routing_for_task("查询南京当前天气", decision)
+
+        assert routing["route"] == "simple"
+        assert routing["worker_type"] == "research"
+
+    def test_historical_weather_analysis_keeps_data_worker(self):
+        decision = TaskRoutingDecision(
+            route="simple", worker_type="data", reason="historical analysis"
+        )
+
+        routing = _normalise_routing_for_task("分析南京历史天气数据", decision)
+
+        assert routing["route"] == "simple"
+        assert routing["worker_type"] == "data"
 
     def test_simple_task_builder_limits_context(self, base_state):
         base_state["routing"] = {"route": "simple", "worker_type": "code"}
@@ -257,6 +327,19 @@ class TestTaskRouter:
         assert len(result["subtasks"]) == 1
         assert result["subtasks"][0]["allowed_tools"] == ["python_repl"]
         assert result["pending_task_ids"] == ["simple-1"]
+
+    def test_simple_follow_up_receives_compact_conversation_context(self, base_state):
+        base_state["routing"] = {"route": "simple", "worker_type": "synthesis"}
+        base_state["conversation_context"] = [
+            {"role": "user", "content": "Original question"},
+            {"role": "assistant", "content": "Original answer"},
+        ]
+
+        result = prepare_simple_task_node(base_state)
+
+        objective = result["subtasks"][0]["objective"]
+        assert "Original question" in objective
+        assert "Original answer" in objective
 
 
 class TestOrchestrator:
@@ -282,6 +365,7 @@ class TestOrchestrator:
         prompt = llm.with_structured_output.return_value.invoke.call_args[0][0][0]
         assert "json" in prompt.content.lower()
         assert "即使只有一项也不得输出为字符串" in prompt.content
+        assert "output_format 必须是 json 字符串" in prompt.content
 
     def test_independent_tasks_remain_parallelizable(self):
         plan = OrchestrationPlan(
@@ -384,7 +468,8 @@ class TestWorkers:
         result = code_worker_node(
             _worker_input("code", allowed_tools=["python_repl"]), llm
         )
-        assert "worked" in result["worker_results"][0]["content"]
+        assert result["worker_results"][0]["content"] == "final code result"
+        assert "worked" in result["messages"][0].content
         assert result["code_snippets"] == ["print('worked')"]
 
     def test_data_worker_records_python_error(self):
@@ -418,7 +503,8 @@ class TestWorkers:
             result = research_worker_node(
                 _worker_input("research", allowed_tools=["web_search"]), llm
             )
-        assert "source result" in result["worker_results"][0]["content"]
+        assert result["worker_results"][0]["content"] == "final research result"
+        assert "source result" in result["messages"][0].content
         bound_tools = llm.bind_tools.call_args[0][0]
         assert [tool.name for tool in bound_tools] == ["web_search"]
 
@@ -453,7 +539,8 @@ class TestWorkers:
         ]
         llm.invoke.side_effect = [response, AIMessage(content="continued safely")]
         result = code_worker_node(_worker_input("code", allowed_tools=[]), llm)
-        assert "拒绝未授权" in result["worker_results"][0]["content"]
+        assert result["worker_results"][0]["content"] == "continued safely"
+        assert "拒绝未授权" in result["messages"][0].content
 
     def test_tool_observation_is_returned_to_model(self):
         llm = MagicMock()
@@ -663,3 +750,5 @@ class TestReviewer:
         reviewer_node(base_state, llm)
         prompt = llm.with_structured_output.return_value.invoke.call_args[0][0][0]
         assert "answer" in prompt.content
+        assert "可交付内容" in prompt.content
+        assert "工具诊断" in prompt.content

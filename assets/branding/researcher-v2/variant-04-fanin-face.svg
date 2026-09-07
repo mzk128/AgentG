@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-labelledby="title desc">
+  <title id="title">AgentG Fan-in Face</title>
+  <desc id="desc">A side-parted controller routes to four worker nodes within an isolated face boundary.</desc>
+  <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M25 50c0-17 11-28 28-28 17 0 28 11 28 28v7c0 16-11 26-28 26S25 73 25 57v-7Z" stroke-width="4"/>
+    <path d="M28 43c10-1 19-7 24-18 5 8 14 13 27 12" stroke-width="4"/>
+    <path d="M53 31v9M53 40 39 52M53 40l15 12M53 40 40 69M53 40l16 28" stroke-width="2.5" opacity=".55"/>
+    <path d="m29 37-7 7 6 3M76 35l7 6-6 4" stroke-width="3.5"/>
+  </g>
+  <g fill="currentColor">
+    <circle cx="53" cy="29" r="5"/>
+    <circle cx="39" cy="52" r="4.5"/>
+    <circle cx="68" cy="52" r="4.5"/>
+    <circle cx="40" cy="69" r="4.5"/>
+    <circle cx="69" cy="68" r="4.5"/>
+  </g>
+</svg>

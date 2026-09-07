@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>AgentG — 01-Researcher v2 Logo Exploration</title>
+  <style>
+    :root { color-scheme:dark; --bg:#0d0e12; --panel:#17171d; --panel2:#211f24; --text:#f5f1eb; --muted:#a49b92; --line:#343038; --accent:#ffad49; --accent2:#7e91ff; --shadow:rgba(0,0,0,.3); }
+    :root[data-theme="light"] { color-scheme:light; --bg:#f5f2ed; --panel:#fffdf9; --panel2:#f0e9df; --text:#251c18; --muted:#766b65; --line:#dfd4ca; --accent:#c76b19; --accent2:#5368d8; --shadow:rgba(65,43,28,.12); }
+    * { box-sizing:border-box; }
+    html { scroll-behavior:smooth; }
+    body { margin:0; min-height:100vh; background:var(--bg); color:var(--text); font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; -webkit-font-smoothing:antialiased; }
+    body::before { content:""; position:fixed; inset:0; pointer-events:none; opacity:.2; background:radial-gradient(circle at 82% 7%,rgba(255,173,73,.2),transparent 30%),radial-gradient(circle at 8% 82%,rgba(126,145,255,.12),transparent 28%); }
+    a { color:inherit; }
+    .page { position:relative; width:min(1240px,calc(100% - 40px)); margin:auto; padding:72px 0 96px; }
+    header { display:grid; grid-template-columns:1fr auto; gap:32px; align-items:end; margin-bottom:48px; }
+    .eyebrow { color:var(--accent); font:600 11px/1.2 ui-monospace,SFMono-Regular,Consolas,monospace; letter-spacing:.18em; text-transform:uppercase; }
+    h1 { margin:13px 0 12px; font-size:clamp(46px,7.5vw,84px); font-weight:300; letter-spacing:-.055em; }
+    header p { max-width:720px; margin:0; color:var(--muted); font-size:15px; line-height:1.75; }
+    .controls { display:flex; align-items:center; gap:8px; padding:6px; border:1px solid var(--line); border-radius:12px; background:var(--panel); }
+    button { border:0; border-radius:8px; padding:9px 13px; color:var(--muted); background:transparent; cursor:pointer; }
+    button.active { color:var(--text); background:var(--panel2); }
+    .grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:18px; }
+    .card { position:relative; min-height:500px; overflow:hidden; border:1px solid var(--line); border-radius:20px; background:linear-gradient(155deg,var(--panel),color-mix(in srgb,var(--panel) 86%,var(--accent) 14%)); box-shadow:0 20px 50px var(--shadow); transition:transform .45s cubic-bezier(.16,1,.3,1),border-color .3s; }
+    .card:hover { transform:translateY(-5px); border-color:color-mix(in srgb,var(--accent) 55%,var(--line)); }
+    .card.recommended::after { content:"RECOMMENDED"; position:absolute; top:18px; right:18px; color:var(--accent); font:600 9px/1 ui-monospace,monospace; letter-spacing:.12em; }
+    .canvas { height:242px; display:grid; place-items:center; color:var(--accent); }
+    .canvas svg { width:142px; height:142px; filter:drop-shadow(0 14px 24px rgba(112,67,27,.22)); transition:transform .5s cubic-bezier(.16,1,.3,1); }
+    .card:hover .canvas svg { transform:scale(1.055) rotate(-1deg); }
+    .details { padding:0 24px 25px; }
+    .number { color:var(--accent2); font:500 10px/1 ui-monospace,monospace; letter-spacing:.1em; }
+    h2 { margin:10px 0 5px; font-size:19px; font-weight:600; letter-spacing:-.02em; }
+    .pattern { color:var(--muted); font:500 10px/1.4 ui-monospace,monospace; text-transform:uppercase; letter-spacing:.08em; }
+    .details p { min-height:58px; margin:14px 0 10px; color:var(--muted); font-size:13px; line-height:1.65; }
+    .use { min-height:45px; padding:11px 12px; border-radius:9px; background:var(--panel2); color:var(--text); font-size:12px; line-height:1.55; }
+    .use strong { color:var(--accent); font-weight:600; }
+    .sizes { display:flex; align-items:end; gap:12px; min-height:58px; margin-top:15px; padding-top:15px; border-top:1px solid var(--line); color:var(--text); }
+    .sizes svg:nth-child(1) { width:16px; height:16px; }.sizes svg:nth-child(2) { width:32px; height:32px; }.sizes svg:nth-child(3) { width:64px; height:64px; }
+    .download { display:inline-flex; margin-top:16px; color:var(--accent); font:600 11px/1 ui-monospace,monospace; text-decoration:none; }
+    .download:hover { text-decoration:underline; }
+    footer { display:flex; justify-content:space-between; gap:24px; margin-top:54px; padding-top:24px; border-top:1px solid var(--line); color:var(--muted); font:11px/1.7 ui-monospace,monospace; }
+    .hidden-symbols { position:absolute; width:0; height:0; overflow:hidden; }
+    @media (max-width:960px) { .grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+    @media (max-width:650px) { .page { width:min(100% - 24px,1240px); padding-top:42px; } header { grid-template-columns:1fr; } .controls { justify-self:start; } .grid { grid-template-columns:1fr; } footer { flex-direction:column; } }
+  </style>
+</head>
+<body>
+  <svg class="hidden-symbols" aria-hidden="true"><defs>
+    <symbol id="logo-1" viewBox="0 0 100 100"><g fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M26 49c0-17 11-28 27-28 17 0 28 11 28 28v9c0 15-11 25-28 25S26 73 26 58v-9Z"/><path d="M27 44c12-1 21-8 25-19 5 9 14 14 27 13"/><path d="m30 36-9 8 7 3M76 34l7 7-6 4"/></g><g fill="currentColor"><circle cx="44" cy="54" r="3.5"/><circle cx="63" cy="54" r="3.5"/><path d="M46 69c5 3 10 3 15 0-2 5-12 5-15 0Z"/></g></symbol>
+    <symbol id="logo-2" viewBox="0 0 100 100"><g fill="currentColor"><circle cx="54" cy="24" r="7"/><circle cx="39" cy="29" r="3.7" opacity=".7"/><circle cx="29" cy="39" r="3.7"/><circle cx="24" cy="53" r="3.7"/><circle cx="28" cy="68" r="3.7"/><circle cx="40" cy="77" r="3.7"/><circle cx="55" cy="80" r="3.7"/><circle cx="69" cy="74" r="3.7"/><circle cx="78" cy="62" r="3.7"/><circle cx="79" cy="47" r="3.7"/><circle cx="72" cy="34" r="3.7"/><circle cx="43" cy="51" r="2.8"/><circle cx="61" cy="51" r="2.8"/><circle cx="52" cy="66" r="3" opacity=".55"/></g></symbol>
+    <symbol id="logo-3" viewBox="0 0 100 100"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M24 54c0-18 12-31 29-31 17 0 28 12 28 30 0 17-11 29-28 29-12 0-22-6-27-16" stroke-width="4"/><path d="M25 43c11 0 20-7 25-18" stroke-width="3.5"/><path d="M27 49c14-1 24-8 29-21" stroke-width="3.2" opacity=".88"/><path d="M29 56c17-2 29-10 34-24" stroke-width="3" opacity=".75"/><path d="M33 63c18-2 31-10 37-25" stroke-width="2.8" opacity=".62"/><path d="M39 70c17-2 29-9 36-23" stroke-width="2.6" opacity=".48"/><path d="m28 38-7 7 7 3M76 37l7 6-6 4" stroke-width="3.5"/></g><circle cx="77" cy="53" r="4" fill="currentColor"/></symbol>
+    <symbol id="logo-4" viewBox="0 0 100 100"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M25 50c0-17 11-28 28-28 17 0 28 11 28 28v7c0 16-11 26-28 26S25 73 25 57v-7Z" stroke-width="4"/><path d="M28 43c10-1 19-7 24-18 5 8 14 13 27 12" stroke-width="4"/><path d="M53 31v9M53 40 39 52M53 40l15 12M53 40 40 69M53 40l16 28" stroke-width="2.5" opacity=".55"/><path d="m29 37-7 7 6 3M76 35l7 6-6 4" stroke-width="3.5"/></g><g fill="currentColor"><circle cx="53" cy="29" r="5"/><circle cx="39" cy="52" r="4.5"/><circle cx="68" cy="52" r="4.5"/><circle cx="40" cy="69" r="4.5"/><circle cx="69" cy="68" r="4.5"/></g></symbol>
+    <symbol id="logo-5" viewBox="0 0 100 100"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M24 49c0-17 12-28 29-28 18 0 29 12 29 29v8c0 15-11 25-29 25S24 73 24 58v-9Z" stroke-width="4"/><path d="M27 43c11-1 20-7 25-18 5 9 14 13 28 12" stroke-width="3.5" opacity=".7"/><path d="M68 50c-4-7-12-10-20-8-10 3-15 13-12 22 3 10 14 14 24 10 6-3 9-8 9-14H54" stroke-width="4"/><path d="m29 37-7 7 6 3M77 36l6 6-6 4" stroke-width="3.5"/></g><circle cx="69" cy="60" r="4" fill="currentColor"/></symbol>
+    <symbol id="logo-6" viewBox="0 0 100 100"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M35 36 53 25M53 25l19 13M35 36 28 55M35 36l15 20M72 38 50 56M72 38l6 19M28 55l22 1M50 56l1 18M78 57 51 74" stroke-width="2.5" opacity=".55"/><path d="M78 68c-7 12-23 17-37 11-12-5-19-17-17-30" stroke-width="4"/><path d="m20 54 4-7 7 4M29 40c9-1 18-7 24-16M72 34l9 7-7 5" stroke-width="3.5"/></g><g fill="currentColor"><circle cx="53" cy="25" r="7"/><circle cx="35" cy="36" r="4.5"/><circle cx="72" cy="38" r="4.5"/><circle cx="28" cy="55" r="4" opacity=".72"/><circle cx="50" cy="56" r="5"/><circle cx="78" cy="57" r="4" opacity=".72"/><circle cx="51" cy="74" r="4.5"/></g></symbol>
+  </defs></svg>
+  <main class="page">
+    <header><div><div class="eyebrow">AgentG / Researcher Identity 02</div><h1>Reliable by design.</h1><p>以 01-Researcher v2 的侧分波浪短发和稳重研究员轮廓为人物锚点，将主分缝变成编排路由、发梢变成 Fan-out、圆角脸部变成 Worker 上下文边界。</p></div><div class="controls" role="group" aria-label="主题"><button type="button" class="active" data-theme="dark">深色</button><button type="button" data-theme="light">浅色</button></div></header>
+    <section class="grid" id="logoGrid" aria-label="01-Researcher v2 Logo 设计方案"></section>
+    <footer><span>EDITABLE SVG · CURRENTCOLOR · VIEWBOX 0 0 100 100</span><span>LOGO GENERATOR · 2026</span></footer>
+  </main>
+  <script>
+    const concepts=[
+      {id:1,title:'Researcher Core',pattern:'Pure geometric · Recommended',file:'researcher-v2-logo.svg',text:'以最少线条保留侧分短发、外翻发梢和圆角脸，整体更稳重、可靠。',use:'主产品 Logo、Web 左上角、应用图标、社交头像',recommended:true},
+      {id:2,title:'Worker Matrix',pattern:'Dot matrix',file:'variant-02-worker-matrix.svg',text:'离散模块围成研究员轮廓，顶部大节点代表 Orchestrator。',use:'架构图、功能徽章、加载状态、品牌底纹'},
+      {id:3,title:'Routing Waves',pattern:'Line system',file:'variant-03-routing-waves.svg',text:'六条发丝式路径分层流动并收敛到结果节点。',use:'官网首屏、动态标识、流式进度和执行动画'},
+      {id:4,title:'Fan-in Face',pattern:'Dots + geometry',file:'variant-04-fanin-face.svg',text:'控制节点向四个 Worker 分发任务，并在圆角边界内完成汇聚。',use:'多 Agent 功能页、编排控制台、演示文稿封面'},
+      {id:5,title:'AgentG Monogram',pattern:'Lines + geometry',file:'variant-05-agentg-monogram.svg',text:'把 G 路径嵌入短发轮廓，保留品牌字母识别。',use:'GitHub 头像、favicon、CLI、文档与 SDK 包图标'},
+      {id:6,title:'Review Circuit',pattern:'Node network · Layered',file:'variant-06-review-circuit.svg',text:'不对称节点构成发型和脸，回箭头表达 Reviewer 定向返工。',use:'审查与可观测模块、审计报告、失败及返工状态'}
+    ];
+    const useLogo=id=>`<svg aria-hidden="true" viewBox="0 0 100 100"><use href="#logo-${id}"></use></svg>`;
+    document.getElementById('logoGrid').innerHTML=concepts.map((item,index)=>`<article class="card ${item.recommended?'recommended':''}"><div class="canvas">${useLogo(item.id)}</div><div class="details"><div class="number">0${index+1}</div><h2>${item.title}</h2><div class="pattern">${item.pattern}</div><p>${item.text}</p><div class="use"><strong>适用：</strong>${item.use}</div><div class="sizes" aria-label="16、32、64 像素预览">${useLogo(item.id)}${useLogo(item.id)}${useLogo(item.id)}</div><a class="download" href="${item.file}" download>DOWNLOAD SVG ↘</a></div></article>`).join('');
+    document.querySelectorAll('[data-theme]').forEach(button=>button.addEventListener('click',()=>{document.documentElement.dataset.theme=button.dataset.theme;document.querySelectorAll('[data-theme]').forEach(item=>item.classList.toggle('active',item===button));}));
+  </script>
+</body>
+</html>

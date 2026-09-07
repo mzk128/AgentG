@@ -28,6 +28,7 @@ class TestSettings:
         )
         assert s.use_redis is False
         assert s.redis_url == "redis://localhost:6379/0"
+        assert s.web_reload is False
         assert s.max_tool_rounds == 4
         assert s.max_tool_calls == 12
         assert s.max_consecutive_errors == 2
@@ -42,6 +43,7 @@ class TestGetSettings:
         monkeypatch.setenv("MODEL_NAME", "env-model")
         monkeypatch.setenv("USE_REDIS", "false")
         monkeypatch.setenv("REDIS_URL", "redis://env-redis:6379/1")
+        monkeypatch.setenv("WEB_RELOAD", "true")
         monkeypatch.setenv("MAX_TOOL_ROUNDS", "3")
         monkeypatch.setenv("MAX_TOOL_CALLS", "9")
         monkeypatch.setenv("MAX_CONSECUTIVE_ERRORS", "4")
@@ -54,6 +56,7 @@ class TestGetSettings:
         assert s.model_name == "env-model"
         assert s.use_redis is False
         assert s.redis_url == "redis://env-redis:6379/1"
+        assert s.web_reload is True
         assert s.max_tool_rounds == 3
         assert s.max_tool_calls == 9
         assert s.max_consecutive_errors == 4

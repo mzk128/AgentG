@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-labelledby="title desc">
+  <title id="title">AgentG Worker Glyph</title>
+  <desc id="desc">A dotted G-shaped worker constellation beneath an orchestrator bun.</desc>
+  <defs>
+    <circle id="worker-dot" r="3.5" fill="currentColor"/>
+  </defs>
+  <g fill="currentColor">
+    <circle cx="55" cy="20" r="7"/>
+    <use href="#worker-dot" x="40" y="27" opacity=".55"/>
+    <use href="#worker-dot" x="69" y="30" opacity=".55"/>
+    <use href="#worker-dot" x="33" y="40"/>
+    <use href="#worker-dot" x="27" y="52"/>
+    <use href="#worker-dot" x="29" y="65"/>
+    <use href="#worker-dot" x="39" y="75"/>
+    <use href="#worker-dot" x="53" y="79"/>
+    <use href="#worker-dot" x="67" y="74"/>
+    <use href="#worker-dot" x="75" y="64"/>
+    <use href="#worker-dot" x="75" y="54"/>
+    <use href="#worker-dot" x="62" y="54"/>
+    <use href="#worker-dot" x="55" y="63" opacity=".55"/>
+    <circle cx="43" cy="51" r="2.5" opacity=".65"/>
+  </g>
+</svg>
