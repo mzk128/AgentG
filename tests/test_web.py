@@ -47,6 +47,58 @@ class TestHealthCheck:
 
 
 class TestTaskCRUD:
+    def test_graph_initialization_failure_finishes_sse_and_marks_failed(self):
+        import queue
+        from dataclasses import replace
+        from multi_agent_system.config import get_settings
+        from multi_agent_system.web_server import _active_threads, _run_graph_stream, _task_store
+        tid = client.post("/api/tasks", json={"task": "test"}).json()["thread_id"]
+        _active_threads.add(tid)
+        configured = replace(get_settings(), openai_api_key="synthetic-only")
+        events = queue.Queue()
+        with patch("multi_agent_system.config.get_settings", return_value=configured), patch(
+                "multi_agent_system.graph.build_graph", side_effect=ValueError("synthetic-private-config")):
+            _run_graph_stream("test", tid, events)
+        assert events.get_nowait()["type"] == "error"
+        assert tid not in _active_threads
+        assert _task_store[tid]["status"] == "failed"
+        assert "synthetic-private-config" not in _task_store[tid]["error"]
+
+    def test_memory_binding_cannot_be_claimed_by_client(self):
+        response = client.post("/api/tasks", json={"task": "test", "memory_user_id": "foreign"})
+        assert response.status_code == 400
+
+    @pytest.mark.parametrize("ids", ["memory-1", ["same", "same"], [1], ["bad id"]])
+    def test_required_memory_ids_are_strict(self, ids):
+        assert client.post("/api/tasks", json={"task": "test", "memory_required_ids": ids}).status_code == 400
+
+    def test_required_memory_ids_persist_in_task_record(self):
+        response = client.post("/api/tasks", json={"task": "test", "memory_required_ids": ["memory-1"]})
+        detail = client.get(f"/api/tasks/{response.json()['thread_id']}").json()
+        assert detail["memory_required_ids"] == ["memory-1"]
+
+    @pytest.mark.parametrize("enabled", [False, True])
+    def test_workspace_cannot_be_inside_memory_directory(self, tmp_path, monkeypatch, enabled):
+        from dataclasses import replace
+        from multi_agent_system.config import get_settings
+        memory = tmp_path / "memory"
+        memory.mkdir()
+        configured = replace(get_settings(), long_term_memory_enabled=enabled, memory_db_path=str(memory / "memory.sqlite3"))
+        with patch("multi_agent_system.config.get_settings", return_value=configured):
+            response = client.post("/api/tasks", json={"task": "test", "workspace_path": str(memory)})
+        assert response.status_code == 400
+
+    def test_terminal_summary_distinguishes_delivery_and_memory_write(self):
+        from multi_agent_system.web_server import _user_summary
+        summary = _user_summary({"status": "completed", "is_pass": True, "execution_result": "已完成。",
+                                 "memory_write_results": [{"status": "candidate"}, {"status": "unavailable"}]})
+        assert "待确认候选 1 条" in summary["content"] and "未保存 1 条" in summary["content"]
+
+    def test_memory_block_is_not_mislabeled_as_runtime_resource_limit(self):
+        from multi_agent_system.web_server import _user_summary
+        summary = _user_summary({"status": "terminated", "termination": {"reason": "memory_required_snapshot_invalid"}})
+        assert summary["title"] == "必要记忆无法安全使用"
+
     def test_create_task_returns_thread_id(self):
         resp = client.post("/api/tasks", json={"task": "Analyze data"})
         assert resp.status_code == 200
@@ -280,7 +332,17 @@ class TestTaskCRUD:
             "progress",
             "Track me",
             "orchestrator",
-            {"plan": "Research then synthesize"},
+            {
+                "plan": "Research then synthesize",
+                "decision_traces": [{
+                    "task_id": "research", "agent_type": "research",
+                    "attempt": 1, "stage": "input", "summary": "Scoped input",
+                    "action": "", "evidence_refs": [], "status": "success",
+                }],
+                "revision_instructions": [{
+                    "task_id": "research", "mode": "replace",
+                }],
+            },
             "[Orchestrator] plan ready",
         )
 
@@ -289,6 +351,37 @@ class TestTaskCRUD:
         assert detail["current_agent"] == "orchestrator"
         assert detail["plan"] == "Research then synthesize"
         assert detail["messages"][0]["content"] == "[Orchestrator] plan ready"
+        assert detail["decision_traces"][0]["summary"] == "Scoped input"
+        assert detail["revision_instructions"][0]["task_id"] == "research"
+
+    def test_completed_initialization_persists_next_visible_stage(self):
+        from multi_agent_system.web_server import _save_running_progress
+
+        created = client.post("/api/tasks", json={"task": "Visible progress"}).json()
+        _save_running_progress(
+            created["thread_id"],
+            "Visible progress",
+            "initialize_resources",
+            {"resource_policy": {"started_at": time.time()}},
+            "",
+            current_agent="task_router",
+        )
+
+        detail = client.get(f"/api/tasks/{created['thread_id']}").json()
+        assert detail["status"] == "running"
+        assert detail["current_agent"] == "task_router"
+
+    @pytest.mark.parametrize("limit, attempts, expected", [(3, 2, "revision"), (3, 3, "done"), (1, 1, "done")])
+    def test_reviewer_next_phase_matches_configured_graph_limit(self, limit, attempts, expected):
+        from multi_agent_system.web_server import _next_running_agent
+
+        state = {
+            "resource_policy": {"max_review_rounds": limit},
+            "review_status": "revise",
+            "revision_targets": ["research"],
+            "attempts": attempts,
+        }
+        assert _next_running_agent("reviewer", state) == expected
 
     def test_completed_task_can_continue_in_same_conversation(self):
         from multi_agent_system.web_server import _task_store
@@ -322,6 +415,46 @@ class TestTaskCRUD:
             {"role": "user", "content": "First question"},
             {"role": "assistant", "content": "First answer"},
         ]
+
+    def test_long_conversation_keeps_bounded_memory_and_full_history(self):
+        from multi_agent_system.web_server import _task_store
+        from multi_agent_system.memory import SUMMARY_PREFIX, estimate_tokens
+        parent_id = None
+        for index in range(10):
+            body = {"task": f"Question {index}"}
+            if parent_id:
+                body["parent_thread_id"] = parent_id
+            response = client.post("/api/tasks", json=body)
+            assert response.status_code == 200
+            parent_id = response.json()["thread_id"]
+            _task_store[parent_id].update({"status": "completed", "is_pass": True,
+                                           "execution_result": f"Answer {index}",
+                                           "error_logs": ["PRIVATE_RAW_LOG"]})
+        detail = client.get(f"/api/tasks/{parent_id}").json()
+        assert len(detail["conversation_turns"]) == 10
+        context = detail["conversation_context"]
+        assert context[0]["content"].startswith(SUMMARY_PREFIX)
+        assert context[-1]["content"] == "Answer 8"
+        assert estimate_tokens(json.dumps(context, ensure_ascii=False)) <= 4000
+        assert "PRIVATE_RAW_LOG" not in json.dumps(context)
+
+    def test_failed_task_diagnostic_is_not_replayed_into_next_turn(self):
+        from multi_agent_system.web_server import _task_store
+        first = client.post("/api/tasks", json={"task": "Try task"}).json()["thread_id"]
+        _task_store[first].update({"status": "failed", "error": "PRIVATE_PROVIDER_ERROR"})
+        next_id = client.post("/api/tasks", json={"task": "Continue", "parent_thread_id": first}).json()["thread_id"]
+        memory = client.get(f"/api/tasks/{next_id}").json()["conversation_context"]
+        assert "PRIVATE_PROVIDER_ERROR" not in json.dumps(memory)
+        assert "失败" in memory[-1]["content"]
+
+    def test_undersized_memory_config_returns_explanation_not_500(self, monkeypatch):
+        from multi_agent_system.web_server import _task_store
+        first = client.post("/api/tasks", json={"task": "question"}).json()["thread_id"]
+        _task_store[first].update({"status": "completed", "execution_result": "answer"})
+        monkeypatch.setenv("CONVERSATION_MAX_TOKENS", "10")
+        response = client.post("/api/tasks", json={"task": "continue", "parent_thread_id": first})
+        assert response.status_code == 422
+        assert "容量" in response.json()["detail"]
 
     def test_running_task_cannot_accept_follow_up(self):
         first = client.post("/api/tasks", json={"task": "Still running"}).json()
@@ -427,6 +560,26 @@ class TestTaskCRUD:
         assert response.status_code == 400
         assert "不能为空" in response.json()["detail"]
 
+    def test_stale_execution_write_cannot_undo_conversation_rename(self):
+        from multi_agent_system.web_server import _load_task_record, _save_task_record
+
+        created = client.post("/api/tasks", json={"task": "Original"}).json()
+        thread_id = created["thread_id"]
+        stale_record = dict(_load_task_record(thread_id))
+
+        response = client.patch(
+            f"/api/conversations/{created['conversation_id']}",
+            json={"title": "Durable title"},
+        )
+        assert response.status_code == 200
+
+        stale_record.update(status="running", current_agent="task_router")
+        _save_task_record(thread_id, stale_record)
+
+        stored = client.get(f"/api/tasks/{thread_id}").json()
+        assert stored["conversation_title"] == "Durable title"
+        assert stored["conversation_updated_at"] > 0
+
     def test_delete_conversation_removes_all_turns(self):
         from multi_agent_system.web_server import _task_store
 
@@ -495,6 +648,18 @@ class TestHomePage:
         assert html.index('id="outputArea"') < html.index('id="taskForm"')
         assert "Multi-Agent Workspace" in html
 
+    def test_sidebar_history_has_bounded_accessible_independent_scroll(self):
+        html = client.get("/").text
+        assert "grid-template-rows:minmax(0,1fr)" in html
+        assert "min-width:0; min-height:0; overflow:hidden; display:flex" in html
+        assert ".history {" in html
+        assert "flex:1 1 0; overflow-y:auto; overflow-x:hidden" in html
+        assert ".history::-webkit-scrollbar" in html
+        assert 'id="historyList" role="region" aria-label="历史会话列表" tabindex="0"' in html
+        assert ".brand,.new-task,.sidebar-section-title,.sidebar-footer { flex-shrink:0; }" in html
+        assert "overflow-x:auto; overflow-y:hidden" in html
+        assert ".workspace { min-width:0; min-height:0; height:100%;" in html
+
     def test_frontend_restores_selected_task_and_uses_outcome_labels(self):
         html = client.get("/").text
         assert "searchParams.get('task')" in html
@@ -519,6 +684,19 @@ class TestHomePage:
         assert "contextmenu" in html
         assert "/api/conversations/" in html
 
+    def test_frontend_exposes_running_visual_elapsed_clock_and_hotkey_picker(self):
+        html = client.get("/").text
+
+        assert 'id="runningElapsed"' in html
+        assert "updateRuntimeClock" in html
+        assert ".workflow-bar.running" in html
+        assert 'id="hotkeyToggle"' in html
+        assert 'id="hotkeyMenu"' in html
+        assert "agentg-submit-hotkey" in html
+        assert "matchesSubmitHotkey" in html
+        assert "collapseCompletedAgentCard" in html
+        assert "collapsed:outcomeOf(turn) === 'run'" in html
+
     def test_frontend_supports_collapsible_steps_turn_navigation_and_summary(self):
         html = client.get("/").text
 
@@ -535,6 +713,29 @@ class TestHomePage:
         assert ".card.collapsed .card-body" in html
         assert "user_summary" in html
         assert "结果总结 · 用户视图" in html
+        assert "decision_trace" in html
+        assert "Decision Trace · 决策轨迹" in html
+        assert "addEventListener('trace'" in html
+        assert "process-group" in html
+        assert "思考与执行过程" in html
+        assert "attachDecisionTraceToCard" in html
+        assert "parseWorkerMessageIdentity" in html
+        assert 'id="jumpBottomBtn"' in html
+        assert "jumpToConversationBottom" in html
+        assert "scrollTo({top:output.scrollHeight, behavior:'smooth'})" in html
+        assert "{focusResult:true}" in html
+
+    def test_frontend_safely_renders_markdown_results(self):
+        html = client.get("/").text
+
+        assert "function renderMarkdown(value)" in html
+        assert "function safeMarkdownUrl(value)" in html
+        assert "cardContent.innerHTML = renderMarkdown" in html
+        assert "cardContent.classList.add('markdown-body')" in html
+        assert ".markdown-body table" in html
+        assert ".markdown-table-wrap" in html
+        assert "['http:', 'https:', 'mailto:']" in html
+        assert "element.textContent = value" in html
 
 
 class TestWebServerRunner:
@@ -549,6 +750,9 @@ class TestWebServerRunner:
         assert kwargs["reload_dirs"]
         assert "*.html" in kwargs["reload_includes"]
         assert "*/workspace/*" in kwargs["reload_excludes"]
+        from multi_agent_system.config import get_settings
+        from multi_agent_system.memory_store import resolve_memory_db_path
+        assert str(resolve_memory_db_path(get_settings().memory_db_path)) + "*" in kwargs["reload_excludes"]
 
     def test_stable_mode_keeps_reload_disabled(self):
         from multi_agent_system.web_server import run_web_server

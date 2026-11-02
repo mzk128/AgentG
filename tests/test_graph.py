@@ -2,6 +2,7 @@ from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+from multi_agent_system.artifact_runtime import RevisionInstruction, create_artifact
 from multi_agent_system.graph import (
     MAX_REVIEW_ROUNDS,
     _affected_task_ids,
@@ -59,6 +60,28 @@ def _workflow_state():
         "revision_feedback": "",
         "attempts": 0,
     }
+
+
+def test_build_graph_bounds_model_request_timeout_by_run_deadline(settings):
+    configured = replace(
+        settings,
+        max_run_seconds=45.0,
+        model_request_timeout_seconds=90.0,
+    )
+    with patch("multi_agent_system.graph.ChatOpenAI") as chat_model, patch(
+        "multi_agent_system.graph.httpx.Client", return_value=MagicMock()
+    ):
+        build_graph(configured)
+
+    assert chat_model.call_args.kwargs["timeout"] == 45.0
+
+
+def test_disabled_memory_still_protects_configured_custom_database_parent(settings, tmp_path):
+    private = tmp_path / "private"
+    configured = replace(settings, long_term_memory_enabled=False, memory_db_path=str(private / "memory.sqlite3"))
+    update = initialize_resources_node({}, configured)
+    assert str(private.resolve()) in update["memory_policy"]["python_denied_paths"]
+    assert not private.exists()  # Protection is path-only, not a database read/create.
 
 
 class TestTaskRouting:
@@ -135,6 +158,48 @@ class TestDependencyScheduler:
         sends = dispatch_workers(state)
         assert sends[0].arg["attempt"] == 3
 
+    def test_revision_dispatch_includes_old_artifact_and_bound_instruction(self):
+        state = _workflow_state()
+        previous = create_artifact("research", "old result")
+        state["current_batch_ids"] = ["research"]
+        state["worker_attempts"] = {"research": 1}
+        state["worker_results"] = [{
+            "task_id": "research", "agent_type": "research", "attempt": 1,
+            "status": "completed", "content": previous.content,
+            "artifact": previous.model_dump(mode="json"),
+        }]
+        state["revision_instructions"] = [RevisionInstruction(
+            task_id="research", mode="patch", allowed_paths=["/text"],
+            requested_changes=["replace one sentence"],
+        ).model_dump(mode="json")]
+
+        send = dispatch_workers(state)[0]
+
+        assert send.arg["previous_deliverable"]["content"] == "old result"
+        assert send.arg["revision_instruction"]["mode"] == "patch"
+        assert send.arg["revision_instruction"]["base_version"] == 1
+        assert send.arg["revision_instruction"]["base_content_hash"] == previous.content_hash
+
+    def test_revision_dispatch_without_old_artifact_uses_regenerate(self):
+        state = _workflow_state()
+        state["current_batch_ids"] = ["research"]
+        state["worker_attempts"] = {"research": 1}
+        state["revision_instructions"] = [RevisionInstruction(
+            task_id="research",
+            mode="patch",
+            allowed_paths=["/text"],
+            requested_changes=["补充缺失结果"],
+            evidence_requirements=["重新执行检索"],
+        ).model_dump(mode="json")]
+
+        send = dispatch_workers(state)[0]
+
+        assert send.arg["previous_deliverable"] == {}
+        assert send.arg["revision_instruction"]["mode"] == "regenerate"
+        assert send.arg["revision_instruction"]["requested_changes"] == ["补充缺失结果"]
+        assert send.arg["revision_instruction"]["evidence_requirements"] == ["重新执行检索"]
+        assert send.arg["revision_instruction"]["base_version"] is None
+
     def test_dispatch_passes_only_bound_workspace_to_worker(self):
         state = _workflow_state()
         state["current_batch_ids"] = ["data"]
@@ -177,6 +242,7 @@ class TestResourceLifecycle:
         policy = result["resource_policy"]
         assert policy["deadline_at"] > policy["started_at"]
         assert policy["max_tool_calls"] == settings.max_tool_calls
+        assert policy["max_review_rounds"] == settings.max_review_rounds
         assert policy["token_budget_enabled"] is False
 
     def test_resource_termination_is_blocked(self):
@@ -193,6 +259,7 @@ class TestResourceLifecycle:
             values={
                 "resource_policy": {
                     "max_tool_calls": 12,
+                    "max_review_rounds": 3,
                     "started_at": 10.0,
                     "deadline_at": 20.0,
                 }
@@ -201,13 +268,16 @@ class TestResourceLifecycle:
         )
 
         with patch("multi_agent_system.graph.time.time", return_value=100.0):
-            assert refresh_resume_deadline(graph, {"configurable": {}}, settings)
+            assert refresh_resume_deadline(
+                graph, {"configurable": {}}, replace(settings, max_review_rounds=6)
+            )
 
         policy = graph.update_state.call_args.args[1]["resource_policy"]
         assert policy["started_at"] == 10.0
         assert policy["resumed_at"] == 100.0
         assert policy["deadline_at"] == 100.0 + settings.max_run_seconds
         assert policy["max_tool_calls"] == 12
+        assert policy["max_review_rounds"] == 3
 
 
 class TestTargetedRevision:
@@ -243,6 +313,21 @@ class TestTargetedRevision:
             "revision_targets": ["research"],
         }
         assert route_after_review(state) == "__end__"
+
+    def test_review_limit_uses_persisted_run_policy(self, settings):
+        state = {
+            **initialize_resources_node({}, replace(settings, max_review_rounds=3)),
+            "review_status": "revise",
+            "attempts": 2,
+            "revision_targets": ["research"],
+        }
+        assert route_after_review(state) == "prepare_revision"
+        state["attempts"] = 3
+        assert route_after_review(state) == "__end__"
+        state["resource_policy"]["max_review_rounds"] = 1
+        state["attempts"] = 1
+        assert route_after_review(state) == "__end__"
+
 
     def test_pass_stops(self):
         assert route_after_review({"review_status": "pass", "attempts": 1}) == "__end__"

@@ -11,6 +11,7 @@ import sys
 import threading
 import time
 import uuid
+from typing import Literal
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict
@@ -21,6 +22,9 @@ from jinja2 import Environment, FileSystemLoader
 from redis.exceptions import RedisError
 
 from .storage import RedisCheckpointSaver, RedisStateStore
+from .memory import ContextBudgetExceeded, compact_conversation_history
+from .memory_paths import configured_memory_roots, is_memory_path
+from .memory_store import resolve_memory_db_path
 
 # ---------------------------------------------------------------------------
 # 初始化
@@ -29,6 +33,8 @@ if sys.version_info < (3, 10):
     raise RuntimeError("当前项目需要 Python 3.10+，请切换解释器后重试。")
 
 app = FastAPI(title="AgentG — 多智能体协作系统", version="1.0.0")
+from .memory_api import router as memory_router
+app.include_router(memory_router)
 
 _executor = ThreadPoolExecutor(max_workers=4)
 
@@ -43,6 +49,7 @@ _jinja_env = Environment(loader=FileSystemLoader(str(_templates_dir)), autoescap
 _task_store: Dict[str, Dict[str, Any]] = {}
 _task_repository: RedisStateStore | None = None
 _repository_url: str | None = None
+_task_store_lock = threading.RLock()
 _active_threads: set[str] = set()
 _active_threads_lock = threading.Lock()
 
@@ -54,6 +61,8 @@ _CONVERSATION_FIELDS = (
     "conversation_context",
     "workspace_path",
     "is_pinned",
+    "conversation_updated_at",
+    "memory_binding",
 )
 
 
@@ -72,20 +81,40 @@ def _get_task_repository() -> RedisStateStore | None:
 
 
 def _save_task_record(thread_id: str, record: Dict[str, Any]) -> None:
-    _task_store[thread_id] = record
+    """Persist a task without letting stale execution writes undo UI metadata.
+
+    A model/tool call can hold an older record while the user renames or pins
+    the conversation.  The monotonically increasing conversation timestamp
+    makes the later execution write preserve that newer metadata.
+    """
     repository = _get_task_repository()
-    if repository is not None:
-        repository.save_task(thread_id, record)
+    with _task_store_lock:
+        current = (
+            repository.load_task(thread_id)
+            if repository is not None
+            else _task_store.get(thread_id)
+        )
+        if current:
+            current_version = float(current.get("conversation_updated_at", 0) or 0)
+            incoming_version = float(record.get("conversation_updated_at", 0) or 0)
+            if current_version > incoming_version:
+                for field in _CONVERSATION_FIELDS:
+                    if field in current:
+                        record[field] = current[field]
+        _task_store[thread_id] = record
+        if repository is not None:
+            repository.save_task(thread_id, record)
 
 
 def _load_task_record(thread_id: str) -> Dict[str, Any] | None:
     repository = _get_task_repository()
-    if repository is not None:
-        record = repository.load_task(thread_id)
-        if record is not None:
-            _task_store[thread_id] = record
-        return record
-    return _task_store.get(thread_id)
+    with _task_store_lock:
+        if repository is not None:
+            record = repository.load_task(thread_id)
+            if record is not None:
+                _task_store[thread_id] = record
+            return record
+        return _task_store.get(thread_id)
 
 
 def _list_task_records() -> list[tuple[str, Dict[str, Any]]]:
@@ -142,18 +171,27 @@ def _normalise_workspace_path(value: Any) -> str:
         raise HTTPException(status_code=400, detail="工作目录不存在") from exc
     if not path.is_dir():
         raise HTTPException(status_code=400, detail="工作目录必须是已存在的文件夹")
+    from .config import get_settings
+    settings = get_settings()
+    roots = configured_memory_roots(settings)
+    if is_memory_path(path, roots):
+        raise HTTPException(status_code=400, detail="长期记忆存储目录不能作为任务工作目录")
     return str(path)
 
 
 def _conversation_result(record: Dict[str, Any]) -> str:
     """Extract compact prior-turn context instead of replaying execution logs."""
-    result = record.get("execution_result") or record.get("error") or ""
+    result = record.get("execution_result") or ""
+    if record.get("status") == "failed":
+        return "上一轮执行失败；未产生已验证结果。"
     if not result and record.get("termination"):
         result = f"任务终止：{record['termination'].get('reason', 'unknown')}"
-    return str(result)[:4000]
+    return str(result)
 
 
 _TERMINATION_SUMMARIES = {
+    "context_budget_exceeded": "任务所需上下文超过当前容量，请缩小任务或调整上下文配置。",
+    "invalid_tool_history": "工具记录不完整，无法继续本轮执行。",
     "max_run_seconds_exceeded": "任务超过了本次允许的运行时间。",
     "max_tool_rounds_exceeded": "任务需要的工具交互轮次超过了当前上限。",
     "max_tool_calls_exceeded": "任务需要的工具调用次数超过了当前上限。",
@@ -297,7 +335,7 @@ def _naturalize_user_result(value: Any) -> str:
     return _naturalize_parsed_result(parsed)
 
 
-def _user_summary(record: Dict[str, Any]) -> Dict[str, Any]:
+def _base_user_summary(record: Dict[str, Any]) -> Dict[str, Any]:
     """Build a deterministic, user-facing terminal summary without exposing CoT."""
     outcome = _task_outcome(record)
     if outcome not in {"success", "failure"}:
@@ -362,6 +400,25 @@ def _user_summary(record: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _user_summary(record: Dict[str, Any]) -> Dict[str, Any]:
+    summary = _base_user_summary(record)
+    if not summary:
+        return summary
+    reason = str(record.get("termination", {}).get("reason", ""))
+    if reason.startswith("memory_"):
+        summary.update(title="必要记忆无法安全使用", overview="任务因长期记忆的权限、时效、版本或容量检查未通过而停止。",
+                       content="请检查记忆状态、宿主身份和独立记忆预算；历史记忆不能代替本轮实时查询。")
+    results = record.get("memory_write_results", [])
+    if results:
+        saved = sum(item.get("status") == "saved" for item in results)
+        candidates = sum(item.get("status") == "candidate" for item in results)
+        failed = len(results) - saved - candidates
+        summary["content"] += f"\n\n长期记忆：已保存 {saved} 条；待确认候选 {candidates} 条；未保存 {failed} 条。"
+    if record.get("memory_notices"):
+        summary["content"] += "\n\n长期记忆提示：部分记忆未能读取或保存，本轮没有据此声明已完成记忆操作。"
+    return summary
+
+
 def _conversation_turns(
     thread_id: str, current_record: Dict[str, Any] | None = None
 ) -> list[Dict[str, Any]]:
@@ -404,6 +461,8 @@ def _save_running_progress(
     node_name: str,
     state_update: Dict[str, Any],
     content: str,
+    *,
+    current_agent: str | None = None,
 ) -> Dict[str, Any]:
     """Persist one observable node update while the graph is still running."""
     record = _load_task_record(thread_id) or {
@@ -412,6 +471,8 @@ def _save_running_progress(
         "created_at": time.time(),
     }
     messages = list(record.get("messages", []))
+    decision_traces = list(record.get("decision_traces", []))
+    decision_traces.extend(state_update.get("decision_traces", []))
     if content:
         messages.append(
             {
@@ -425,8 +486,9 @@ def _save_running_progress(
         {
             "task": task,
             "status": "running",
-            "current_agent": node_name,
+            "current_agent": current_agent or node_name,
             "messages": messages,
+            "decision_traces": decision_traces,
             "updated_at": time.time(),
         }
     )
@@ -440,17 +502,53 @@ def _save_running_progress(
         "review_status",
         "review_decision",
         "revision_targets",
+        "revision_instructions",
         "is_pass",
         "attempts",
         "error_logs",
         "code_snippets",
         "resource_policy",
+        "memory_policy",
+        "memory_binding", "memory_required_ids", "memory_event_at", "retrieved_memories",
+        "worker_memories", "worker_memory_grants", "memory_write_plans", "memory_write_results", "memory_notices",
+        "conversation_context",
         "termination",
     ):
         if field in state_update:
             record[field] = state_update[field]
     _save_task_record(thread_id, record)
     return record
+
+
+def _next_running_agent(node_name: str, state_update: Dict[str, Any]) -> str:
+    """Return the next user-visible phase after a completed graph node."""
+    if node_name == "initialize_resources":
+        return "resource_terminated" if state_update.get("termination") else "task_router"
+    if node_name == "prepare_memory":
+        return "resource_terminated" if state_update.get("termination") else "task_router"
+    if node_name == "stage_memory_writes":
+        return "commit_memory_writes"
+    if node_name == "commit_memory_writes":
+        return "done"
+    if node_name == "task_router":
+        return (
+            "orchestrator"
+            if state_update.get("routing", {}).get("route") == "team"
+            else "workers"
+        )
+    if node_name in {"prepare_simple", "orchestrator", "prepare_batch", "prepare_revision"}:
+        return "workers"
+    if node_name in {"research_worker", "code_worker", "data_worker", "synthesis_worker"}:
+        return "fan_in"
+    if node_name == "fan_in":
+        return "prepare_batch"
+    if node_name == "reviewer":
+        from .graph import route_after_review
+
+        return "revision" if route_after_review(state_update) == "prepare_revision" else "done"
+    if node_name == "resource_terminated":
+        return "done"
+    return node_name
 
 
 def _message_source(content: str) -> str:
@@ -501,7 +599,22 @@ def _run_graph_stream(
             _active_threads.discard(thread_id)
         return
 
-    graph = build_graph(settings)
+    try:
+        graph = build_graph(settings)
+    except Exception:
+        # Constructor/configuration failures must close SSE too; otherwise the
+        # UI keeps displaying an initial phase forever with no graph running.
+        error = "无法初始化工作流，请核查模型或长期记忆配置。"
+        try:
+            record = _load_task_record(thread_id) or {"task": task, "created_at": time.time()}
+            record.update(status="failed", error=error, current_agent="error", updated_at=time.time())
+            _save_task_record(thread_id, record)
+        except RedisError:
+            pass
+        event_queue.put({"type": "error", "error": error})
+        with _active_threads_lock:
+            _active_threads.discard(thread_id)
+        return
     config = {"configurable": {"thread_id": thread_id}}
     runtime_record = _load_task_record(thread_id) or {}
     graph_input: Dict[str, Any] | None = create_initial_state(
@@ -509,6 +622,8 @@ def _run_graph_stream(
         thread_id,
         conversation_context=runtime_record.get("conversation_context", []),
         workspace_path=runtime_record.get("workspace_path", ""),
+        conversation_id=runtime_record.get("conversation_id", thread_id),
+        memory_required_ids=runtime_record.get("memory_required_ids", []),
     )
     final_state: Dict[str, Any] = dict(graph_input)
 
@@ -550,49 +665,45 @@ def _run_graph_stream(
                             "content": content,
                         }
                     )
+                for trace in state_update.get("decision_traces", []):
+                    event_queue.put(
+                        {
+                            "type": "trace",
+                            "node": node_name,
+                            "trace": trace,
+                        }
+                    )
                 final_state.update(state_update)
+                next_agent = _next_running_agent(node_name, final_state)
                 _save_running_progress(
-                    thread_id, task, node_name, state_update, content
+                    thread_id,
+                    task,
+                    node_name,
+                    state_update,
+                    content,
+                    current_agent=next_agent,
                 )
 
                 event_queue.put(
                     {"type": "status", "agent": node_name, "state": "complete"}
                 )
 
-                if node_name == "task_router":
-                    next_agent = (
-                        "orchestrator"
-                        if state_update.get("routing", {}).get("route") == "team"
-                        else "workers"
-                    )
-                    event_queue.put(
-                        {"type": "status", "agent": next_agent, "state": "thinking"}
-                    )
-                elif node_name == "prepare_batch":
-                    event_queue.put(
-                        {
-                            "type": "status",
-                            "agent": "workers",
-                            "state": "thinking",
-                            "batch": state_update.get("current_batch_ids", []),
-                        }
-                    )
+                status_event = {
+                    "type": "status",
+                    "agent": next_agent,
+                    "state": "thinking",
+                }
+                if node_name == "prepare_batch":
+                    status_event["batch"] = state_update.get("current_batch_ids", [])
                 if node_name == "reviewer":
-                    review_status = state_update.get("review_status", "")
-                    attempts = state_update.get("attempts", 0)
-                    if review_status == "revise" and attempts < 2:
-                        event_queue.put(
-                            {
-                                "type": "status",
-                                "agent": "revision",
-                                "state": "retrying",
-                                "targets": state_update.get("revision_targets", []),
-                            }
+                    if next_agent == "revision":
+                        status_event.update(
+                            state="retrying",
+                            targets=state_update.get("revision_targets", []),
                         )
                     else:
-                        event_queue.put(
-                            {"type": "status", "agent": "done", "state": "complete"}
-                        )
+                        status_event["state"] = "complete"
+                event_queue.put(status_event)
 
         # 并行 Worker 的 reducer 合并结果以 checkpoint 中的最终状态为准。
         final_state = dict(graph.get_state(config).values)
@@ -609,6 +720,8 @@ def _run_graph_stream(
                 else _BASE_DIR / "workspace" / thread_id
             )
             try:
+                if is_memory_path(workspace_dir, configured_memory_roots(settings)):
+                    raise PermissionError("代码产物不能写入长期记忆目录")
                 workspace_dir.mkdir(parents=True, exist_ok=True)
                 for i, code in enumerate(code_snippets):
                     file_path = workspace_dir / f"agent_generated_code_{i + 1}.py"
@@ -648,19 +761,29 @@ def _run_graph_stream(
             "review_status": final_state.get("review_status", ""),
             "review_decision": final_state.get("review_decision", {}),
             "revision_targets": final_state.get("revision_targets", []),
+            "revision_instructions": final_state.get("revision_instructions", []),
             "is_pass": final_state.get("is_pass", False),
             "attempts": final_state.get("attempts", 0),
             "error_logs": final_state.get("error_logs", []) + save_errors,
             "code_snippets": final_state.get("code_snippets", []),
             "resource_policy": final_state.get("resource_policy", {}),
+            "memory_policy": final_state.get("memory_policy", {}),
+            **{field: final_state.get(field, default) for field, default in (
+                ("memory_binding", {}), ("memory_required_ids", []), ("memory_event_at", ""),
+                ("retrieved_memories", {}), ("worker_memories", {}), ("worker_memory_grants", {}), ("memory_write_plans", []),
+                ("memory_write_results", []), ("memory_notices", []))},
+            "conversation_context": final_state.get("conversation_context", []),
             "resource_usage": summarize_resource_events(
                 final_state.get("resource_events", [])
             ),
             "termination": termination,
             "saved_files": saved_files,
             "messages": messages_for_store,
+            "decision_traces": final_state.get("decision_traces", []),
             "metadata": final_state.get("metadata", {}),
             "created_at": previous_record.get("created_at", time.time()),
+            "run_started_at": previous_record.get("run_started_at"),
+            "finished_at": time.time(),
             "updated_at": time.time(),
             "current_agent": "done",
         }
@@ -684,6 +807,8 @@ def _run_graph_stream(
                     "error": str(exc),
                     "metadata": {"thread_id": thread_id},
                     "created_at": previous_record.get("created_at", time.time()),
+                    "run_started_at": previous_record.get("run_started_at"),
+                    "finished_at": time.time(),
                     "updated_at": time.time(),
                     "current_agent": "error",
                 },
@@ -752,6 +877,18 @@ async def health_check():
 async def create_task(request: Request):
     """提交新任务，返回 thread_id。客户端随后应调用 /stream 端点开始执行。"""
     body = await request.json()
+    if any((key.startswith("memory_") and key != "memory_required_ids") or key in {
+            "retrieved_memories", "worker_memories", "worker_memory_grants"} for key in body):
+        raise HTTPException(status_code=400, detail="长期记忆身份与投影只能由宿主绑定")
+    required_ids = body.get("memory_required_ids", [])
+    from .memory_records import Identifier
+    from pydantic import TypeAdapter, ValidationError
+    try:
+        required_ids = TypeAdapter(list[Identifier]).validate_python(required_ids, strict=True)
+        if len(required_ids) > 20 or len(set(required_ids)) != len(required_ids):
+            raise ValueError("invalid required memories")
+    except (ValueError, ValidationError):
+        raise HTTPException(status_code=400, detail="必要记忆必须为不重复的 ID 数组，最多 20 条") from None
     task = body.get("task", "").strip()
     if not task:
         raise HTTPException(status_code=400, detail="任务描述不能为空")
@@ -782,16 +919,34 @@ async def create_task(request: Request):
         if parent_workspace and requested_workspace and requested_workspace != parent_workspace:
             raise HTTPException(status_code=409, detail="同一会话不能切换已绑定的工作目录")
         workspace_path = parent_workspace or requested_workspace
+        if parent.get("memory_binding"):
+            from .config import get_settings
+            host = get_settings()
+            binding = parent["memory_binding"]
+            if (binding.get("user_id"), binding.get("project_id")) != (host.memory_user_id, host.memory_project_id or None):
+                raise HTTPException(status_code=409, detail="当前宿主身份与原会话绑定不同，请恢复原配置或新建会话")
         conversation_id = str(parent.get("conversation_id") or parent_thread_id)
         conversation_title = str(parent.get("conversation_title") or parent.get("task") or task)
         turn_index = int(parent.get("turn_index", 1)) + 1
         conversation_context = list(parent.get("conversation_context", []))
         is_pinned = bool(parent.get("is_pinned", False))
-        conversation_context.append({"role": "user", "content": str(parent.get("task", ""))[:4000]})
+        conversation_context.append({"role": "user", "content": str(parent.get("task", ""))})
         prior_result = _conversation_result(parent)
         if prior_result:
             conversation_context.append({"role": "assistant", "content": prior_result})
-        conversation_context = conversation_context[-12:]
+        else:
+            conversation_context.append({"role": "assistant", "content": "上一轮未产生可交付结果。"})
+        from .config import get_settings
+        memory_settings = get_settings()
+        try:
+            conversation_context = compact_conversation_history(
+                conversation_context,
+                max_tokens=memory_settings.conversation_max_tokens,
+                summary_tokens=memory_settings.summary_max_tokens,
+                recent_turns=memory_settings.recent_turns,
+            )
+        except ContextBudgetExceeded as exc:
+            raise HTTPException(status_code=422, detail="会话记忆容量不足，请增大上下文配置或新建会话。") from exc
 
     record = {
         "task": task,
@@ -802,6 +957,7 @@ async def create_task(request: Request):
         "turn_index": turn_index,
         "conversation_context": conversation_context,
         "workspace_path": workspace_path,
+        "memory_required_ids": required_ids,
         "is_pinned": is_pinned,
         "metadata": {"thread_id": thread_id},
         "created_at": time.time(),
@@ -903,17 +1059,18 @@ async def update_conversation(conversation_id: str, request: Request):
         is_pinned = body["is_pinned"]
 
     try:
-        records = _conversation_records(conversation_id)
-        if not records:
-            raise HTTPException(status_code=404, detail="会话不存在")
-        changed_at = time.time()
-        for thread_id, record in records:
-            if title is not None:
-                record["conversation_title"] = title
-            if is_pinned is not None:
-                record["is_pinned"] = is_pinned
-            record["conversation_updated_at"] = changed_at
-            _save_task_record(thread_id, record)
+        with _task_store_lock:
+            records = _conversation_records(conversation_id)
+            if not records:
+                raise HTTPException(status_code=404, detail="会话不存在")
+            changed_at = time.time()
+            for thread_id, record in records:
+                if title is not None:
+                    record["conversation_title"] = title
+                if is_pinned is not None:
+                    record["is_pinned"] = is_pinned
+                record["conversation_updated_at"] = changed_at
+                _save_task_record(thread_id, record)
     except RedisError as exc:
         raise HTTPException(status_code=503, detail="Redis 持久化服务不可用") from exc
 
@@ -927,7 +1084,8 @@ async def update_conversation(conversation_id: str, request: Request):
 
 
 @app.delete("/api/conversations/{conversation_id}")
-async def delete_conversation(conversation_id: str):
+async def delete_conversation(conversation_id: str,
+                              memory_cleanup: Literal["conversation", "all_related"] = "conversation"):
     """Delete an entire conversation and every persisted run checkpoint."""
     try:
         records = _conversation_records(conversation_id)
@@ -937,6 +1095,11 @@ async def delete_conversation(conversation_id: str):
         with _active_threads_lock:
             if any(thread_id in _active_threads for thread_id in thread_ids):
                 raise HTTPException(status_code=409, detail="运行中的会话不能删除")
+
+        # SQLite first, so an unavailable memory store cannot silently orphan
+        # private memory. Retrying after a Redis failure sees terminal tombstones.
+        from .memory_api import cleanup_conversation_memory
+        deleted_memories = cleanup_conversation_memory(conversation_id, memory_cleanup)
 
         repository = _get_task_repository()
         checkpoint_saver = None
@@ -954,6 +1117,8 @@ async def delete_conversation(conversation_id: str):
         "deleted": True,
         "conversation_id": conversation_id,
         "deleted_runs": len(records),
+        "deleted_memories": deleted_memories,
+        "memory_cleanup": memory_cleanup,
     }
 
 
@@ -967,6 +1132,10 @@ async def delete_task(thread_id: str):
         record = _load_task_record(thread_id)
         if record is None:
             raise HTTPException(status_code=404, detail="任务不存在")
+        conversation_id = record.get("conversation_id") or thread_id
+        if len(_conversation_records(conversation_id)) == 1:
+            from .memory_api import cleanup_conversation_memory
+            cleanup_conversation_memory(conversation_id, "conversation")
         repository = _get_task_repository()
         if repository is not None:
             from .config import get_settings
@@ -1000,9 +1169,11 @@ async def stream_task(thread_id: str):
         _active_threads.add(thread_id)
 
     resume = status != "pending"
+    run_started_at = time.time()
     record["status"] = "running"
     record["current_agent"] = "workflow"
-    record["updated_at"] = time.time()
+    record["run_started_at"] = run_started_at
+    record["updated_at"] = run_started_at
     record.pop("error", None)
     try:
         _save_task_record(thread_id, record)
@@ -1065,6 +1236,7 @@ def run_web_server(*, reload_override: bool | None = None) -> None:
                     "*/.agentg/*",
                     "*/__pycache__/*",
                     "*.pyc",
+                    str(resolve_memory_db_path(get_settings().memory_db_path)) + "*",
                 ],
             }
         )

@@ -286,3 +286,26 @@ class TestRedisCheckpointSaver:
         )
 
         assert second_graph.invoke(None, config=config) == {"value": 2}
+
+    def test_memory_and_typed_observations_survive_checkpoint_recreation(self):
+        from multi_agent_system.memory import compact_conversation_history
+        from multi_agent_system.state import create_initial_state
+        from multi_agent_system.tool_runtime import ToolExecutionResult
+
+        history = [{"role": role, "content": f"{role} {index}"}
+                   for index in range(10) for role in ("user", "assistant")]
+        state = create_initial_state("continue", "memory-recovery", conversation_context=compact_conversation_history(history))
+        state["memory_policy"] = {"context_max_tokens": 16000}
+        state["worker_results"] = [{"task_id": "weather", "content": "verified result", "attempt": 1,
+            "tool_observations": [{"name": "current_weather", "tool_call_id": "call-1", "is_error": False,
+                                   "result": ToolExecutionResult(ok=True, data={"city": "南京"}, executed=True).model_dump()}]}]
+        client = FakeRedis()
+        saver = RedisCheckpointSaver("redis://unused", client=client)
+        config = {"configurable": {"thread_id": "memory-recovery", "checkpoint_ns": ""}}
+        checkpoint = empty_checkpoint()
+        checkpoint["channel_values"] = state
+        saver.put(config, checkpoint, {"source": "loop", "step": 1}, {})
+        restored = RedisCheckpointSaver("redis://unused", client=client).get_tuple(config).checkpoint["channel_values"]
+        assert restored["conversation_context"] == state["conversation_context"]
+        assert restored["memory_policy"] == state["memory_policy"]
+        assert restored["worker_results"] == state["worker_results"]

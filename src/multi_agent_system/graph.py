@@ -12,6 +12,11 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 
+from .artifact_runtime import (
+    RevisionInstruction,
+    bind_revision_base,
+    coerce_previous_artifact,
+)
 from .agents import (
     WorkerType,
     code_worker_node,
@@ -27,10 +32,14 @@ from .agents import (
     task_router_node,
 )
 from .config import Settings
+from .memory import ContextBudgetExceeded, compact_conversation_history, project_upstream_results
 from .state import MultiAgentState
 from .storage import RedisCheckpointSaver
+from .memory_runtime import GraphMemoryRuntime
+from .memory_paths import configured_memory_roots
 
 
+# Fallback for checkpoints created before review limits became configurable.
 MAX_REVIEW_ROUNDS = 2
 WORKER_NODE_NAMES = {
     WorkerType.RESEARCH.value: "research_worker",
@@ -45,19 +54,50 @@ def initialize_resources_node(
 ) -> MultiAgentState:
     """为一次图运行创建固定截止时间和资源上限。"""
     started_at = time.time()
+    termination = {}
+    if state.get("memory_required_ids") and not settings.long_term_memory_enabled:
+        termination = {"source": "memory_read", "reason": "memory_disabled"}
+    try:
+        conversation_context = compact_conversation_history(
+            state.get("conversation_context", []),
+            max_tokens=settings.conversation_max_tokens,
+            summary_tokens=settings.summary_max_tokens,
+            recent_turns=settings.recent_turns,
+        )
+    except ContextBudgetExceeded:
+        # Keep the stored source intact; no model call may use partial context.
+        conversation_context = state.get("conversation_context", [])
+        termination = {"source": "initialize_resources", "reason": "context_budget_exceeded"}
     return {
+        "memory_policy": {
+            "context_max_tokens": settings.context_max_tokens,
+            "context_output_reserve": settings.context_output_reserve,
+            "conversation_max_tokens": settings.conversation_max_tokens,
+            "summary_max_tokens": settings.summary_max_tokens,
+            "recent_turns": settings.recent_turns,
+            "upstream_max_tokens": settings.upstream_max_tokens,
+            "python_denied_paths": configured_memory_roots(settings),
+            "long_term_top_k": settings.memory_top_k,
+            "long_term_max_tokens": settings.memory_max_tokens,
+            "long_term_scan_limit": settings.memory_scan_limit,
+            "long_term_auto_extract": settings.memory_auto_extract,
+        },
+        "conversation_context": conversation_context,
         "resource_policy": {
+            "max_review_rounds": settings.max_review_rounds,
             "max_tool_rounds": settings.max_tool_rounds,
             "max_tool_calls": settings.max_tool_calls,
             "max_consecutive_errors": settings.max_consecutive_errors,
             "max_run_seconds": settings.max_run_seconds,
             "total_action_budget": settings.total_action_budget,
+            "python_timeout_seconds": settings.python_timeout_seconds,
+            "tool_output_max_chars": settings.tool_output_max_chars,
             "started_at": started_at,
             "deadline_at": started_at + settings.max_run_seconds,
             "token_budget_enabled": False,
         },
         "resource_events": [],
-        "termination": {},
+        "termination": termination,
     }
 
 
@@ -98,6 +138,18 @@ def prepare_batch_node(state: MultiAgentState) -> MultiAgentState:
     if total_budget:
         used = summarize_resource_events(state.get("resource_events", []))["budget_used"]
         ready_ids = ready_ids[: max(0, total_budget - used)]
+    latest_results = latest_worker_results(state.get("worker_results", []))
+    try:
+        for spec in subtasks:
+            if spec["id"] in ready_ids:
+                project_upstream_results(
+                    [latest_results[dep] for dep in spec.get("dependencies", []) if dep in latest_results],
+                    max_tokens=int(state.get("memory_policy", {}).get("upstream_max_tokens", 3000)),
+                )
+    except ContextBudgetExceeded:
+        return {"current_batch_ids": [], "termination": {
+            "source": "scheduler", "reason": "context_budget_exceeded",
+        }}
     return {"current_batch_ids": ready_ids}
 
 
@@ -118,6 +170,7 @@ def _split_quota(total: int, count: int, *, minimum: int = 0) -> list[int]:
     return quotas
 
 
+# Fan-out 到对应专业的 Worker
 def dispatch_workers(
     state: MultiAgentState,
 ) -> list[Send] | Literal["reviewer", "resource_terminated"]:
@@ -132,6 +185,11 @@ def dispatch_workers(
     latest_results = latest_worker_results(state.get("worker_results", []))
     attempts = state.get("worker_attempts", {})
     revision_feedback = state.get("revision_feedback", "")
+    revision_instructions = {
+        str(item.get("task_id")): item
+        for item in state.get("revision_instructions", [])
+        if isinstance(item, dict) and item.get("task_id")
+    }
     policy = state.get("resource_policy", {})
     usage = summarize_resource_events(state.get("resource_events", []))
     remaining_budget = max(
@@ -147,11 +205,63 @@ def dispatch_workers(
 
     for index, task_id in enumerate(current_batch):
         spec = specs[task_id]
-        upstream_results = [
+        previous_result = latest_results.get(task_id)
+        previous_deliverable: dict[str, Any] = {}
+        revision_instruction: dict[str, Any] = {}
+        if previous_result and int(attempts.get(task_id, 0)) > 0:
+            previous_deliverable = {
+                key: previous_result.get(key)
+                for key in (
+                    "task_id", "agent_type", "attempt", "status", "content",
+                    "artifact", "artifact_id", "artifact_version",
+                    "base_artifact_version", "changed_paths", "change_summary",
+                )
+            }
+            try:
+                instruction = RevisionInstruction.model_validate(
+                    revision_instructions.get(task_id)
+                    or {
+                        "task_id": task_id,
+                        "mode": "replace",
+                        "requested_changes": [
+                            revision_feedback or "根据最新上游结果更新受影响内容"
+                        ],
+                    }
+                )
+                instruction = bind_revision_base(
+                    instruction, coerce_previous_artifact(previous_deliverable)
+                )
+                revision_instruction = instruction.model_dump(mode="json")
+            except (ValueError, TypeError):
+                revision_instruction = RevisionInstruction(
+                    task_id=task_id,
+                    mode="regenerate",
+                    requested_changes=["旧产物版本信息无效，请重新生成完整产物"],
+                ).model_dump(mode="json")
+        elif revision_instructions.get(task_id):
+            try:
+                instruction = RevisionInstruction.model_validate(
+                    revision_instructions[task_id]
+                )
+                if instruction.mode != "regenerate":
+                    instruction = RevisionInstruction(
+                        task_id=task_id,
+                        mode="regenerate",
+                        requested_changes=instruction.requested_changes,
+                        evidence_requirements=instruction.evidence_requirements,
+                    )
+                revision_instruction = instruction.model_dump(mode="json")
+            except (ValueError, TypeError):
+                revision_instruction = RevisionInstruction(
+                    task_id=task_id,
+                    mode="regenerate",
+                    requested_changes=["没有可用旧产物，请重新生成完整产物"],
+                ).model_dump(mode="json")
+        upstream_results = project_upstream_results([
             latest_results[dependency]
             for dependency in spec.get("dependencies", [])
             if dependency in latest_results
-        ]
+        ], max_tokens=int(state.get("memory_policy", {}).get("upstream_max_tokens", 3000)))
         worker_input = {
             "task_id": task_id,
             "agent_type": spec["agent_type"],
@@ -159,9 +269,20 @@ def dispatch_workers(
             "workspace_path": state.get("workspace_path", ""),
             "upstream_results": upstream_results,
             "allowed_tools": spec.get("allowed_tools", []),
+            "required_tools": spec.get("required_tools", []),
+            "memory_policy": state.get("memory_policy", {}),
+            "memory_binding": state.get("memory_binding", {}),
+            "retrieved_memories": state.get("worker_memories", {}).get(
+                f"{task_id}:{int(attempts.get(task_id, 0)) + 1}", {}),
+            "memory_artifact_grants": state.get("worker_memory_grants", {}).get(
+                f"{task_id}:{int(attempts.get(task_id, 0)) + 1}", []),
+            "python_timeout_seconds": float(policy.get("python_timeout_seconds", 15.0)),
+            "tool_output_max_chars": int(policy.get("tool_output_max_chars", 12000)),
             "output_format": spec.get("output_format", "清晰文本"),
             "acceptance_criteria": spec.get("acceptance_criteria", []),
             "revision_feedback": revision_feedback,
+            "revision_instruction": revision_instruction,
+            "previous_deliverable": previous_deliverable,
             "attempt": int(attempts.get(task_id, 0)) + 1,
             "max_tool_rounds": int(policy.get("max_tool_rounds", 4)),
             "tool_call_quota": tool_quotas[index],
@@ -242,14 +363,16 @@ def resource_terminated_node(state: MultiAgentState) -> MultiAgentState:
             "status": "blocked",
             "failed_criteria": ["resource_policy"],
             "revision_targets": [],
+            "revision_instructions": [],
             "feedback": feedback,
             "confidence": 1.0,
         },
         "revision_targets": [],
+        "revision_instructions": [],
         "is_pass": False,
     }
 
-
+# Affected_Task Reviewer给出的返工合集 (指定目标 + 所有依赖此目标的下游任务)
 def _affected_task_ids(
     subtasks: list[dict], revision_targets: list[str]
 ) -> list[str]:
@@ -284,7 +407,9 @@ def route_after_review(
 ) -> Literal["prepare_revision", "__end__"]:
     if (
         state.get("review_status") == "revise"
-        and int(state.get("attempts", 0)) < MAX_REVIEW_ROUNDS
+        and int(state.get("attempts", 0)) < int(
+            state.get("resource_policy", {}).get("max_review_rounds", MAX_REVIEW_ROUNDS)
+        )
         and state.get("revision_targets")
     ):
         return "prepare_revision"
@@ -307,36 +432,55 @@ def refresh_resume_deadline(graph: Any, config: dict, settings: Settings) -> boo
     graph.update_state(config, {"resource_policy": policy})
     return True
 
-
-def build_graph(settings: Settings, *, checkpointer: Any | None = None):
+# build graph/Agentic Workflow
+def build_graph(settings: Settings, *, checkpointer: Any | None = None, memory_service=None):
     http_client = httpx.Client(trust_env=False)
     llm = ChatOpenAI(
         model=settings.model_name,
         api_key=settings.openai_api_key,
         base_url=settings.openai_base_url,
         temperature=0.2,
+        timeout=min(
+            settings.model_request_timeout_seconds,
+            settings.max_run_seconds,
+        ),
         http_client=http_client,
     )
 
+    runtime = GraphMemoryRuntime(settings, memory_service)
     graph = StateGraph(MultiAgentState)
     graph.add_node(
         "initialize_resources", partial(initialize_resources_node, settings=settings)
     )
-    graph.add_node("task_router", partial(task_router_node, llm=llm))
+    graph.add_node("task_router", runtime.wrap(partial(task_router_node, llm=llm), "task_router"))
     graph.add_node("prepare_simple", prepare_simple_task_node)
-    graph.add_node("orchestrator", partial(orchestrator_node, llm=llm))
-    graph.add_node("prepare_batch", prepare_batch_node)
-    graph.add_node("research_worker", partial(research_worker_node, llm=llm))
-    graph.add_node("code_worker", partial(code_worker_node, llm=llm))
-    graph.add_node("data_worker", partial(data_worker_node, llm=llm))
-    graph.add_node("synthesis_worker", partial(synthesis_worker_node, llm=llm))
+    graph.add_node("orchestrator", runtime.wrap(partial(orchestrator_node, llm=llm), "orchestrator"))
+    graph.add_node("prepare_batch", partial(runtime.prepare_batch, prepare_batch_node))
+    graph.add_node("research_worker", runtime.wrap(partial(research_worker_node, llm=llm), "research_worker", worker=True))
+    graph.add_node("code_worker", runtime.wrap(partial(code_worker_node, llm=llm), "code_worker", worker=True))
+    graph.add_node("data_worker", runtime.wrap(partial(data_worker_node, llm=llm), "data_worker", worker=True))
+    graph.add_node("synthesis_worker", runtime.wrap(partial(synthesis_worker_node, llm=llm), "synthesis_worker", worker=True))
     graph.add_node("fan_in", fan_in_node)
-    graph.add_node("reviewer", partial(reviewer_node, llm=llm))
+    graph.add_node("reviewer", runtime.wrap(partial(reviewer_node, llm=llm), "reviewer"))
     graph.add_node("prepare_revision", prepare_revision_node)
     graph.add_node("resource_terminated", resource_terminated_node)
 
     graph.add_edge(START, "initialize_resources")
-    graph.add_edge("initialize_resources", "task_router")
+    # Retain node names even when disabled so an old pending memory checkpoint
+    # can finish with an explicit not-saved result after the feature is turned off.
+    graph.add_node("prepare_memory", runtime.prepare)
+    graph.add_node("stage_memory_writes", runtime.stage_final)
+    graph.add_node("commit_memory_writes", runtime.commit_final)
+    graph.add_edge("stage_memory_writes", "commit_memory_writes")
+    graph.add_edge("commit_memory_writes", END)
+    if settings.long_term_memory_enabled or memory_service is not None:
+        graph.add_edge("initialize_resources", "prepare_memory")
+        graph.add_edge("prepare_memory", "task_router")
+        terminal = "stage_memory_writes"
+    else:
+        graph.add_edge("initialize_resources", "task_router")
+        graph.add_edge("prepare_memory", "task_router")
+        terminal = END
     graph.add_conditional_edges(
         "task_router",
         route_task,
@@ -369,10 +513,10 @@ def build_graph(settings: Settings, *, checkpointer: Any | None = None):
     graph.add_conditional_edges(
         "reviewer",
         route_after_review,
-        {"prepare_revision": "prepare_revision", "__end__": END},
+        {"prepare_revision": "prepare_revision", "__end__": terminal},
     )
     graph.add_edge("prepare_revision", "prepare_batch")
-    graph.add_edge("resource_terminated", END)
+    graph.add_edge("resource_terminated", terminal)
 
     if checkpointer is None:
         checkpointer = (

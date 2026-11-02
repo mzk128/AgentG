@@ -61,6 +61,13 @@ def run() -> None:
             if "messages" in state_update and state_update["messages"]:
                 last_message = state_update["messages"][-1]
                 print(last_message.content)
+            for trace in state_update.get("decision_traces", []):
+                evidence = ", ".join(trace.get("evidence_refs", [])) or "无"
+                print(
+                    f"[DecisionTrace:{trace.get('stage', 'execution')}] "
+                    f"{trace.get('summary', '')}\n"
+                    f"动作: {trace.get('action') or '无'} · 证据: {evidence}"
+                )
             
     # 并行 Worker 的 reducer 合并结果以 checkpoint 中的最终状态为准。
     final_state = dict(app.get_state(config).values)
@@ -83,6 +90,10 @@ def run() -> None:
 
     print("\n=== Final State ===")
     pprint(final_state)
+    if final_state.get("memory_notices"):
+        print("长期记忆提示:", ", ".join(final_state["memory_notices"]))
+    if final_state.get("memory_write_results"):
+        print("长期记忆写入结果:", final_state["memory_write_results"])
 
     if settings.use_redis:
         print(f"\nRedis 检查点已保存: thread_id={thread_id}")

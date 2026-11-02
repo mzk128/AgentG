@@ -54,10 +54,10 @@ body {
 }
 button,textarea,input { font:inherit; }
 button { color:inherit; }
-.app { display:grid; grid-template-columns:292px minmax(0,1fr); height:100vh; }
+.app { display:grid; grid-template-columns:292px minmax(0,1fr); grid-template-rows:minmax(0,1fr); height:100vh; height:100dvh; }
 
 .sidebar {
-  min-width:0; display:flex; flex-direction:column; background:var(--sidebar);
+  min-width:0; min-height:0; overflow:hidden; display:flex; flex-direction:column; background:var(--sidebar);
   border-right:1px solid var(--border);
 }
 .brand { display:flex; align-items:center; gap:11px; padding:18px 16px 14px; }
@@ -80,7 +80,17 @@ button { color:inherit; }
   display:flex; align-items:center; justify-content:space-between; padding:8px 16px;
   color:var(--muted); font-size:11px; font-weight:650; letter-spacing:.04em; text-transform:uppercase;
 }
-.history { min-height:0; flex:1; overflow-y:auto; padding:0 8px 12px; }
+.brand,.new-task,.sidebar-section-title,.sidebar-footer { flex-shrink:0; }
+.history {
+  min-height:0; flex:1 1 0; overflow-y:auto; overflow-x:hidden; padding:0 8px 12px;
+  overscroll-behavior:contain; scrollbar-gutter:stable;
+  scrollbar-width:thin; scrollbar-color:var(--border-strong) transparent;
+}
+.history:focus-visible { outline:1px solid var(--accent); outline-offset:-1px; }
+.history::-webkit-scrollbar { width:9px; height:9px; }
+.history::-webkit-scrollbar-track { background:transparent; }
+.history::-webkit-scrollbar-thumb { border:2px solid transparent; border-radius:999px; background:var(--border-strong); background-clip:padding-box; }
+.history::-webkit-scrollbar-thumb:hover { background:var(--muted-2); background-clip:padding-box; }
 .history-empty { padding:18px 10px; color:var(--muted-2); font-size:12px; line-height:1.55; }
 .history-item {
   width:100%; padding:10px; margin-bottom:3px; border:1px solid transparent; border-radius:9px;
@@ -106,27 +116,29 @@ button { color:inherit; }
 .status-badge.pending { color:var(--yellow); background:rgba(242,191,94,.1); border-color:rgba(242,191,94,.18); }
 .sidebar-footer { position:relative; padding:9px 10px 11px; border-top:1px solid var(--border); }
 .sidebar-tools { display:flex; align-items:center; justify-content:space-between; gap:8px; }
-.theme-toggle {
+.sidebar-action-group { display:flex; align-items:center; gap:3px; }
+.theme-toggle,.hotkey-toggle {
   display:flex; align-items:center; gap:8px; min-width:0; padding:7px 8px;
   border:1px solid transparent; border-radius:8px; background:transparent; color:var(--muted);
   font-size:11px; cursor:pointer;
 }
-.theme-toggle:hover,.theme-toggle[aria-expanded="true"] { color:var(--text); background:var(--panel-2); border-color:var(--border); }
+.theme-toggle:hover,.theme-toggle[aria-expanded="true"],.hotkey-toggle:hover,.hotkey-toggle[aria-expanded="true"] { color:var(--text); background:var(--panel-2); border-color:var(--border); }
 .theme-swatch { width:12px; height:12px; border-radius:50%; background:linear-gradient(135deg,var(--brand-a),var(--brand-b)); box-shadow:0 0 0 2px var(--border); }
-.theme-menu {
+.theme-menu,.hotkey-menu {
   display:none; position:absolute; z-index:50; left:10px; bottom:45px; width:188px; padding:6px;
   border:1px solid var(--border); border-radius:10px; background:var(--panel); box-shadow:var(--shadow);
 }
-.theme-menu.visible { display:block; }
-.theme-option { width:100%; display:flex; align-items:center; gap:9px; padding:8px; border:0; border-radius:7px; background:transparent; text-align:left; font-size:11.5px; cursor:pointer; }
-.theme-option:hover,.theme-option.active { background:var(--accent-soft); color:var(--text); }
-.theme-option small { margin-left:auto; color:var(--muted-2); }
+.hotkey-menu { left:78px; width:176px; }
+.theme-menu.visible,.hotkey-menu.visible { display:block; }
+.theme-option,.hotkey-option { width:100%; display:flex; align-items:center; gap:9px; padding:8px; border:0; border-radius:7px; background:transparent; text-align:left; font-size:11.5px; cursor:pointer; }
+.theme-option:hover,.theme-option.active,.hotkey-option:hover,.hotkey-option.active { background:var(--accent-soft); color:var(--text); }
+.theme-option small,.hotkey-option small { margin-left:auto; color:var(--muted-2); }
 .connection { display:flex; align-items:center; gap:8px; color:var(--muted); font-size:11px; }
 .connection-dot { width:7px; height:7px; border-radius:50%; background:var(--muted-2); }
 .connection-dot.ok { background:var(--green); box-shadow:0 0 0 3px rgba(85,217,139,.1); }
 .connection-dot.error { background:var(--red); box-shadow:0 0 0 3px rgba(255,107,121,.1); }
 
-.workspace { min-width:0; height:100vh; overflow:hidden; display:flex; flex-direction:column; background:var(--bg); }
+.workspace { min-width:0; min-height:0; height:100%; overflow:hidden; display:flex; flex-direction:column; background:var(--bg); }
 .workspace-header {
   min-height:61px; display:flex; align-items:center; justify-content:space-between; gap:20px;
   padding:10px 24px; border-bottom:1px solid var(--border); background:var(--header-bg);
@@ -141,10 +153,18 @@ button { color:inherit; }
   border-bottom:1px solid var(--border); background:var(--workflow-bg); color:var(--muted); font-size:11.5px;
 }
 .workflow-bar.visible { display:flex; }
+.workflow-bar.running {
+  position:relative; color:var(--text-soft); background:linear-gradient(90deg,var(--workflow-bg),var(--accent-soft),var(--workflow-bg));
+  background-size:220% 100%; animation:runningSweep 2.8s linear infinite;
+}
+.workflow-bar.running::after { content:""; position:absolute; right:0; bottom:-1px; left:0; height:2px; background:linear-gradient(90deg,transparent,var(--cyan),transparent); }
 .workflow-dot { width:6px; height:6px; border-radius:50%; background:var(--muted-2); }
 .workflow-dot.thinking,.workflow-dot.retrying,.workflow-dot.resuming { background:var(--cyan); animation:pulse 1.2s ease-in-out infinite; }
 .workflow-dot.complete { background:var(--green); }
+.running-label { font-weight:700; color:var(--text); }
+.running-elapsed { margin-left:auto; color:var(--cyan); font-family:"JetBrains Mono","Cascadia Code",Consolas,monospace; font-size:10.5px; font-variant-numeric:tabular-nums; }
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.28} }
+@keyframes runningSweep { from{background-position:100% 0} to{background-position:-120% 0} }
 
 .workspace-content {
   position:relative; min-height:0; height:0; flex:1 1 auto;
@@ -182,6 +202,7 @@ button { color:inherit; }
 .card.research_worker::before,.card.code_worker::before,.card.data_worker::before,.card.synthesis_worker::before { background:var(--cyan); }
 .card.reviewer::before,.card.done::before { background:var(--green); }
 .card.user_summary::before { background:var(--green); box-shadow:0 0 0 1px var(--green),0 0 14px rgba(85,217,139,.2); }
+.card.decision_trace::before { background:var(--cyan); box-shadow:0 0 0 1px var(--cyan),0 0 12px rgba(67,197,255,.18); }
 .card.user::before { background:var(--accent); }
 .card.error::before,.card.resource_terminated::before { background:var(--red); }
 .card-header { display:flex; align-items:center; justify-content:space-between; padding:10px 13px; border-bottom:1px solid var(--border); }
@@ -190,6 +211,7 @@ button { color:inherit; }
 .agent-label.research_worker,.agent-label.code_worker,.agent-label.data_worker,.agent-label.synthesis_worker { color:var(--cyan); }
 .agent-label.reviewer,.agent-label.done { color:var(--green); }
 .agent-label.user_summary { color:var(--green); }
+.agent-label.decision_trace { color:var(--cyan); }
 .agent-label.user { color:var(--accent); }
 .agent-label.error,.agent-label.resource_terminated { color:var(--red); }
 .card-controls { flex:0 0 auto; display:flex; align-items:center; gap:7px; }
@@ -210,9 +232,75 @@ button { color:inherit; }
 }
 .card.user_summary { border-color:rgba(85,217,139,.28); background:linear-gradient(145deg,var(--panel),rgba(85,217,139,.035)); }
 .card.user_summary .card-body { font-family:Inter,"SF Pro Text","Segoe UI",system-ui,sans-serif; font-size:13px; line-height:1.72; }
+.card.decision_trace { border-color:rgba(67,197,255,.22); background:linear-gradient(145deg,var(--panel),rgba(67,197,255,.025)); }
+.card.decision_trace .card-body { font-family:Inter,"SF Pro Text","Segoe UI",system-ui,sans-serif; font-size:12px; line-height:1.65; }
+.card-content { white-space:pre-wrap; word-break:break-word; }
+.markdown-body { white-space:normal; overflow-wrap:anywhere; }
+.markdown-body > :first-child { margin-top:0; }
+.markdown-body > :last-child { margin-bottom:0; }
+.markdown-body h1,.markdown-body h2,.markdown-body h3,.markdown-body h4,.markdown-body h5,.markdown-body h6 {
+  margin:1.05em 0 .48em; color:var(--text); line-height:1.32; font-family:Inter,"SF Pro Text","Segoe UI",system-ui,sans-serif;
+}
+.markdown-body h1 { font-size:1.38em; }
+.markdown-body h2 { font-size:1.24em; }
+.markdown-body h3 { font-size:1.12em; }
+.markdown-body h4,.markdown-body h5,.markdown-body h6 { font-size:1em; }
+.markdown-body p { margin:.65em 0; }
+.markdown-body ul,.markdown-body ol { margin:.65em 0; padding-left:1.65em; }
+.markdown-body li + li { margin-top:.28em; }
+.markdown-body strong { color:var(--text); font-weight:700; }
+.markdown-body a { color:var(--cyan); text-decoration:none; }
+.markdown-body a:hover { text-decoration:underline; }
+.markdown-body code {
+  padding:.12em .36em; border:1px solid var(--border); border-radius:5px;
+  background:var(--panel-2); color:var(--text); font-family:"JetBrains Mono","Cascadia Code",Consolas,monospace; font-size:.92em;
+}
+.markdown-body pre {
+  margin:.8em 0; padding:11px 12px; overflow:auto; border:1px solid var(--border);
+  border-radius:8px; background:var(--panel-2); white-space:pre;
+}
+.markdown-body pre code { padding:0; border:0; background:transparent; }
+.markdown-body blockquote { margin:.75em 0; padding:.2em 0 .2em 11px; border-left:3px solid var(--accent); color:var(--muted); }
+.markdown-body hr { margin:1em 0; border:0; border-top:1px solid var(--border); }
+.markdown-table-wrap { margin:.8em 0; overflow-x:auto; }
+.markdown-body table { width:100%; border-collapse:collapse; background:color-mix(in srgb,var(--panel) 82%,transparent); }
+.markdown-body th,.markdown-body td { padding:7px 9px; border:1px solid var(--border); text-align:left; vertical-align:top; }
+.markdown-body th { background:var(--panel-2); color:var(--text); font-weight:700; }
+.process-group {
+  margin:0 0 15px; border:1px solid var(--border); border-radius:var(--radius);
+  background:color-mix(in srgb,var(--panel) 84%,transparent); box-shadow:0 8px 28px rgba(0,0,0,.08);
+}
+.process-group > summary {
+  min-height:42px; display:flex; align-items:center; gap:9px; padding:9px 13px;
+  color:var(--text-soft); cursor:pointer; list-style:none; user-select:none;
+}
+.process-group > summary::-webkit-details-marker { display:none; }
+.process-chevron { color:var(--muted); font-size:12px; transition:transform .15s ease; }
+.process-group:not([open]) .process-chevron { transform:rotate(-90deg); }
+.process-title { font-size:11px; font-weight:700; letter-spacing:.035em; }
+.process-count { margin-left:auto; color:var(--muted-2); font-size:10px; }
+.process-body { padding:2px 12px 1px; border-top:1px solid var(--border); }
+.process-body > .card:first-child { margin-top:12px; }
+.decision-trace-group { margin-top:13px; padding-top:10px; border-top:1px dashed var(--border); }
+.decision-trace-group > summary {
+  display:flex; align-items:center; gap:7px; color:var(--cyan); cursor:pointer;
+  font-family:Inter,"SF Pro Text","Segoe UI",system-ui,sans-serif; font-size:11px; font-weight:650;
+  list-style:none; user-select:none;
+}
+.decision-trace-group > summary::-webkit-details-marker { display:none; }
+.trace-chevron { color:var(--muted); transition:transform .15s ease; }
+.decision-trace-group:not([open]) .trace-chevron { transform:rotate(-90deg); }
+.decision-trace-count { color:var(--muted-2); font-size:10px; font-weight:500; }
+.decision-trace-list { display:flex; flex-direction:column; gap:7px; margin-top:9px; }
+.decision-trace-entry {
+  padding:8px 10px; border-left:2px solid var(--cyan); border-radius:0 7px 7px 0;
+  background:var(--panel-2); color:var(--text-soft); font-family:Inter,"SF Pro Text","Segoe UI",system-ui,sans-serif;
+  font-size:11.5px; line-height:1.6; white-space:pre-wrap; word-break:break-word;
+}
 .turn-section { scroll-margin-top:18px; }
 .turn-divider { margin:4px 0 12px; color:var(--muted-2); font-size:10px; letter-spacing:.04em; text-transform:uppercase; }
 .progress-placeholder { padding:22px; text-align:center; color:var(--muted); }
+.progress-placeholder.running { margin:12px 0; border:1px solid color-mix(in srgb,var(--cyan) 34%,var(--border)); border-radius:12px; background:linear-gradient(110deg,transparent,var(--accent-soft),transparent); background-size:220% 100%; animation:runningSweep 2.8s linear infinite; }
 .progress-placeholder strong { display:block; color:var(--text-soft); font-size:13px; }
 .progress-placeholder span { display:block; margin-top:6px; font-size:11.5px; }
 
@@ -255,6 +343,15 @@ button { color:inherit; }
 .turn-nav-item.active { background:var(--accent-soft); color:var(--accent); }
 .turn-nav-name { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px; }
 .turn-nav-item.active .turn-nav-marker { width:13px; background:var(--accent); }
+.jump-bottom {
+  visibility:hidden; position:absolute; z-index:34; left:50%; bottom:17px; width:34px; height:34px;
+  display:grid; place-items:center; border:1px solid var(--border-strong); border-radius:50%;
+  background:var(--panel-2); color:var(--text-soft); box-shadow:var(--shadow); cursor:pointer;
+  opacity:0; transform:translate(-50%,8px); transition:opacity .15s ease,transform .15s ease,visibility .15s ease,background .15s ease;
+}
+.jump-bottom.visible { visibility:visible; opacity:1; transform:translate(-50%,0); }
+.jump-bottom:hover { background:var(--panel-3); color:var(--text); }
+.jump-bottom svg { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
 
 .composer-wrap {
   flex:0 0 auto; padding:10px 24px 12px;
@@ -319,6 +416,24 @@ button { color:inherit; }
 .toast { visibility:hidden; position:fixed; z-index:140; left:50%; bottom:26px; transform:translate(-50%,12px); padding:9px 12px; border:1px solid var(--border); border-radius:9px; background:var(--panel); color:var(--text-soft); box-shadow:var(--shadow); font-size:11.5px; opacity:0; transition:.18s ease; }
 .toast.visible { visibility:visible; transform:translate(-50%,0); opacity:1; }
 .toast.error { color:var(--red); }
+.memory-toggle { padding:5px 8px; border:1px solid var(--border); border-radius:7px; background:var(--panel-2); color:var(--text-soft); cursor:pointer; }
+.memory-modal { width:min(960px,100%); max-height:90dvh; overflow:auto; font-size:12px; }
+.memory-modal button,.memory-modal select,.memory-modal textarea { font:inherit; }
+.memory-toolbar,.memory-pagination { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:12px 0; }
+.memory-modal select,.memory-modal textarea,.modal select { padding:8px; border:1px solid var(--border-strong); border-radius:7px; background:var(--panel-2); color:var(--text); }
+.memory-modal textarea { width:100%; min-height:90px; resize:vertical; margin-top:8px; font:inherit; }
+.memory-layout { display:grid; grid-template-columns:minmax(180px,1fr) minmax(0,2fr); gap:16px; }
+.memory-list button { display:block; width:100%; text-align:left; margin-bottom:6px; padding:10px; background:var(--panel-2); color:var(--text); border:1px solid var(--border); border-radius:8px; cursor:pointer; overflow-wrap:anywhere; }
+.memory-list button[aria-current=true] { border-color:var(--accent); }
+.memory-detail { min-width:0; }
+.memory-detail pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:11px; color:var(--text-soft); }
+.memory-modal button:disabled { opacity:.5; cursor:not-allowed; }
+.memory-error { color:var(--red); white-space:pre-wrap; }
+.memory-consent { display:block; margin-top:12px; font-size:12px; }
+.memory-consent input { width:auto; margin:0 5px 0 0; }
+#modalMemoryCleanup { margin-top:12px; font-size:12px; }
+#modalMemoryCleanup select { width:100%; margin-top:8px; }
+@media (max-width:760px) { .memory-layout { grid-template-columns:1fr; } .memory-modal { max-height:92dvh; } }
 
 @media (max-width:760px) {
   .app { grid-template-columns:1fr; grid-template-rows:190px minmax(0,1fr); }
@@ -327,9 +442,9 @@ button { color:inherit; }
   .brand-copy span,.sidebar-footer { display:none; }
   .new-task { position:absolute; right:4px; top:5px; width:auto; }
   .new-task kbd { display:none; }
-  .history { display:flex; overflow-x:auto; overflow-y:hidden; padding:0 8px 8px; }
+  .history { display:flex; overflow-x:auto; overflow-y:hidden; scrollbar-gutter:auto; padding:0 8px 8px; }
   .sidebar-section-title { padding:3px 13px 6px; }
-  .history-item { min-width:230px; margin:0 4px 0 0; }
+  .history-item { flex:0 0 230px; min-width:230px; margin:0 4px 0 0; }
   .workspace-header,.workflow-bar { padding-left:15px; padding-right:15px; }
   .output { padding:20px 14px 24px; }
   .composer-wrap { padding:10px 12px 13px; }
@@ -371,15 +486,24 @@ button { color:inherit; }
     </div>
     <button class="new-task" id="newTaskBtn" type="button"><span>＋</span> 新建任务 <kbd>Ctrl N</kbd></button>
     <div class="sidebar-section-title"><span>Tasks</span><span id="taskCount">0</span></div>
-    <div class="history" id="historyList"><div class="history-empty">暂无任务。请在下方输入任务描述。</div></div>
+    <div class="history" id="historyList" role="region" aria-label="历史会话列表" tabindex="0"><div class="history-empty">暂无任务。请在下方输入任务描述。</div></div>
     <div class="sidebar-footer">
       <div class="theme-menu" id="themeMenu" role="menu" aria-label="界面风格">
         <button class="theme-option" type="button" data-theme="graphite"><span class="theme-swatch"></span><span>石墨黑</span><small>Default</small></button>
         <button class="theme-option" type="button" data-theme="midnight"><span class="theme-swatch"></span><span>深海蓝</span></button>
         <button class="theme-option" type="button" data-theme="paper"><span class="theme-swatch"></span><span>纸张白</span></button>
       </div>
+      <div class="hotkey-menu" id="hotkeyMenu" role="menu" aria-label="执行热键">
+        <button class="hotkey-option" type="button" data-hotkey="ctrl-enter"><span>⌨</span><span>Ctrl + Enter</span><small>Default</small></button>
+        <button class="hotkey-option" type="button" data-hotkey="alt-enter"><span>⌨</span><span>Alt + Enter</span></button>
+        <button class="hotkey-option" type="button" data-hotkey="shift-enter"><span>⌨</span><span>Shift + Enter</span></button>
+      </div>
       <div class="sidebar-tools">
-        <button class="theme-toggle" id="themeToggle" type="button" aria-expanded="false" aria-controls="themeMenu" title="切换界面风格"><span class="theme-swatch"></span><span id="themeLabel">石墨黑</span><span>⌔</span></button>
+        <div class="sidebar-action-group">
+          <button class="theme-toggle" id="themeToggle" type="button" aria-expanded="false" aria-controls="themeMenu" title="切换界面风格"><span class="theme-swatch"></span><span id="themeLabel">石墨黑</span><span>⌔</span></button>
+          <button class="hotkey-toggle" id="hotkeyToggle" type="button" aria-expanded="false" aria-controls="hotkeyMenu" title="更改执行热键"><span>⌨</span><span>热键</span></button>
+          <button class="memory-toggle" id="memoryToggle" type="button" title="管理长期记忆">记忆</button>
+        </div>
         <div class="connection" title="持久化连接状态"><span class="connection-dot" id="connectionDot"></span><span id="connectionText">检查中</span></div>
       </div>
     </div>
@@ -393,11 +517,13 @@ button { color:inherit; }
           <p id="taskMeta">选择左侧任务查看执行过程</p>
         </div>
       </div>
+      <button class="memory-toggle" id="memoryHeaderToggle" type="button" aria-label="打开长期记忆管理">记忆管理</button>
       <div class="header-status" id="headerStatus"><span class="status-badge pending">Ready</span></div>
     </header>
     <div class="workflow-bar" id="agentStatusBar">
       <span class="workflow-dot" id="workflowDot"></span>
-      <span id="workflowStatus">等待任务</span>
+      <span class="running-label" id="workflowStatus">等待任务</span>
+      <span class="running-elapsed" id="runningElapsed" hidden></span>
     </div>
     <div class="workspace-content">
       <section class="output" id="outputArea">
@@ -411,6 +537,9 @@ button { color:inherit; }
           <nav class="turn-nav-list" id="turnNavList"><div class="turn-nav-empty">选择会话后可按轮次快速定位任务。</div></nav>
         </div>
       </aside>
+      <button class="jump-bottom" id="jumpBottomBtn" type="button" title="跳至最后一个任务的底部" aria-label="跳至最后一个任务的底部">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 8 5 5 5-5"/></svg>
+      </button>
     </div>
     <div class="composer-wrap">
       <form class="composer" id="taskForm">
@@ -445,9 +574,43 @@ button { color:inherit; }
     <h2 id="modalTitle">编辑会话</h2>
     <p id="modalDescription"></p>
     <input id="modalInput" type="text" maxlength="120" autocomplete="off" aria-label="会话名称">
+    <div id="modalMemoryCleanup" hidden>
+      <label for="memoryCleanupSelect">关联记忆处理</label>
+      <select id="memoryCleanupSelect">
+        <option value="conversation">删除会话私有及产物记忆；保留用户/项目记忆</option>
+        <option value="all_related">同时删除源自本会话的用户/项目记忆（可能影响其他会话）</option>
+      </select>
+      <p id="memoryImpact">正在核查关联记忆…</p>
+    </div>
     <div class="modal-actions">
       <button type="button" id="modalCancel">取消</button>
       <button class="primary" type="button" id="modalConfirm">保存</button>
+    </div>
+  </div>
+</div>
+<div class="modal-backdrop" id="memoryModal" role="presentation">
+  <div class="modal memory-modal" role="dialog" aria-modal="true" aria-labelledby="memoryTitle">
+    <h2 id="memoryTitle">长期记忆管理</h2>
+    <p id="memorySettings"></p>
+    <p id="memoryRetention"></p>
+    <div class="memory-toolbar">
+      <label>作用域 <select id="memoryScope"><option value="user">用户</option><option value="project">项目</option><option value="conversation">当前会话</option><option value="artifact">当前会话产物</option></select></label>
+      <label>状态 <select id="memoryStatus"><option value="">全部</option><option value="candidate">待确认</option><option value="active">生效</option><option value="disabled">停用</option><option value="deleted">已删除</option><option value="superseded">已替代</option></select></label>
+      <button class="memory-toggle" id="memoryRefresh" type="button">刷新</button>
+      <button class="memory-toggle" id="memoryClose" type="button">关闭</button>
+    </div>
+    <p class="memory-error" id="memoryError" role="status"></p>
+    <div class="memory-layout">
+      <div><div class="memory-list" id="memoryList"></div><div class="memory-pagination"><button id="memoryPrev" type="button">上一页</button><button id="memoryNext" type="button">下一页</button></div></div>
+      <div class="memory-detail" id="memoryDetail" hidden>
+        <pre id="memoryMetadata"></pre>
+        <label for="memoryBody">记忆正文（仅纠错时修改）</label><textarea id="memoryBody" maxlength="8000"></textarea>
+        <details><summary>来源与版本历史</summary><pre id="memoryHistory"></pre><div class="memory-pagination"><button id="memoryHistoryPrev" type="button">上一页版本</button><button id="memoryHistoryNext" type="button">下一页版本</button></div></details>
+        <div class="memory-toolbar"><label>操作 <select id="memoryAction"><option value="confirm">确认候选</option><option value="correct">纠错</option><option value="disable">停用</option><option value="enable">重新启用</option><option value="delete">逻辑删除（不可恢复该 ID）</option></select></label></div>
+        <label for="memoryReason">操作原因</label><textarea id="memoryReason" maxlength="500" placeholder="请填写公开、非敏感的修改原因"></textarea>
+        <label class="memory-consent"><input id="memoryConsent" type="checkbox">我确认此条目的作用域、原正文及所选操作</label>
+        <div class="modal-actions"><button class="primary" id="memoryApply" type="button">应用操作</button></div>
+      </div>
     </div>
   </div>
 </div>
@@ -463,6 +626,8 @@ let historyConversations = new Map();
 let conversationMenuTarget = null;
 let modalMode = null;
 let toastTimer = null;
+let liveAgentCards = new Map();
+let submitHotkey = 'ctrl-enter';
 
 const workflowLabels = {
   workflow:'恢复工作流', task_router:'任务分流', orchestrator:'Orchestrator 规划',
@@ -470,6 +635,7 @@ const workflowLabels = {
   data_worker:'DataAgent', synthesis_worker:'SynthesisAgent', fan_in:'结果汇聚',
   reviewer:'结构化审查', revision:'定向返工', prepare_revision:'准备定向返工',
   prepare_batch:'准备执行批次', initialize_resources:'初始化资源策略',
+  prepare_memory:'读取并校验长期记忆', stage_memory_writes:'准备受控记忆计划', commit_memory_writes:'提交受控记忆计划',
   resource_terminated:'资源限制终止', done:'任务完成', error:'执行失败'
 };
 const cardLabels = {
@@ -478,6 +644,7 @@ const cardLabels = {
   research_worker:'ResearchAgent · 研究', code_worker:'CodeAgent · 编码',
   data_worker:'DataAgent · 数据', synthesis_worker:'SynthesisAgent · 综合',
   reviewer:'Reviewer · 结构化审查', resource_terminated:'Resource Policy · 资源终止',
+  decision_trace:'Decision Trace · 决策轨迹',
   user_summary:'结果总结 · 用户视图', error:'Error · 执行失败',
   done:'Done · 任务完成', node:'Agent Output'
 };
@@ -486,6 +653,11 @@ const themes = {
   graphite:{label:'石墨黑', colorScheme:'dark'},
   midnight:{label:'深海蓝', colorScheme:'dark'},
   paper:{label:'纸张白', colorScheme:'light'}
+};
+const submitHotkeys = {
+  'ctrl-enter':{label:'Ctrl + Enter', ctrl:true},
+  'alt-enter':{label:'Alt + Enter', alt:true},
+  'shift-enter':{label:'Shift + Enter', shift:true}
 };
 
 function applyTheme(themeName, persist=true) {
@@ -510,6 +682,59 @@ function closeThemeMenu() {
   document.getElementById('themeToggle').setAttribute('aria-expanded', 'false');
 }
 
+function closeHotkeyMenu() {
+  document.getElementById('hotkeyMenu').classList.remove('visible');
+  document.getElementById('hotkeyToggle').setAttribute('aria-expanded', 'false');
+}
+
+function applySubmitHotkey(name, persist=true) {
+  submitHotkey = submitHotkeys[name] ? name : 'ctrl-enter';
+  document.querySelectorAll('.hotkey-option[data-hotkey]').forEach(option =>
+    option.classList.toggle('active', option.dataset.hotkey === submitHotkey)
+  );
+  document.getElementById('submitBtn').title = `${submitHotkeys[submitHotkey].label} 执行任务`;
+  if (persist) {
+    try { window.localStorage.setItem('agentg-submit-hotkey', submitHotkey); } catch (_) {}
+  }
+  updateComposerMode(currentTask);
+}
+
+function initialiseSubmitHotkey() {
+  let saved = 'ctrl-enter';
+  try { saved = window.localStorage.getItem('agentg-submit-hotkey') || saved; } catch (_) {}
+  applySubmitHotkey(saved, false);
+}
+
+function matchesSubmitHotkey(event) {
+  if (event.key !== 'Enter') return false;
+  const binding = submitHotkeys[submitHotkey];
+  return Boolean(event.ctrlKey || event.metaKey) === Boolean(binding.ctrl) &&
+    Boolean(event.altKey) === Boolean(binding.alt) &&
+    Boolean(event.shiftKey) === Boolean(binding.shift);
+}
+
+function formatElapsed(totalSeconds) {
+  const seconds = Math.max(0, Math.floor(totalSeconds || 0));
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const rest = seconds % 60;
+  return hours ? `${String(hours).padStart(2,'0')}:${String(minutes).padStart(2,'0')}:${String(rest).padStart(2,'0')}` :
+    `${String(minutes).padStart(2,'0')}:${String(rest).padStart(2,'0')}`;
+}
+
+function updateRuntimeClock() {
+  const elapsed = document.getElementById('runningElapsed');
+  if (!currentTask || outcomeOf(currentTask) !== 'run') {
+    elapsed.hidden = true;
+    elapsed.textContent = '';
+    return;
+  }
+  const policyStarted = Number((currentTask.resource_policy || {}).started_at || 0);
+  const started = Number(currentTask.run_started_at || policyStarted || currentTask.created_at || Date.now() / 1000);
+  elapsed.textContent = `运行 ${formatElapsed(Date.now() / 1000 - started)}`;
+  elapsed.hidden = false;
+}
+
 function showToast(message, isError=false) {
   const toast = document.getElementById('toast');
   toast.textContent = message;
@@ -522,6 +747,210 @@ function escapeHtml(value) {
   const element = document.createElement('div');
   element.textContent = value == null ? '' : String(value);
   return element.innerHTML;
+}
+
+function safeMarkdownUrl(value) {
+  try {
+    const parsed = new URL(String(value || ''), window.location.origin);
+    return ['http:', 'https:', 'mailto:'].includes(parsed.protocol) ? parsed.href : '';
+  } catch (_) { return ''; }
+}
+
+function renderMarkdownInline(value) {
+  const tokens = [];
+  const token = html => {
+    const marker = `@@AGENTG_MD_${tokens.length}@@`;
+    tokens.push(html);
+    return marker;
+  };
+  let text = String(value == null ? '' : value);
+  text = text.replace(/`([^`\n]+)`/g, (_, code) => token(`<code>${escapeHtml(code)}</code>`));
+  text = text.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (_, label, target) => {
+    const url = safeMarkdownUrl(target);
+    if (!url) return label;
+    return token(`<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>`);
+  });
+  let html = escapeHtml(text)
+    .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/__([^_\n]+)__/g, '<strong>$1</strong>')
+    .replace(/~~([^~\n]+)~~/g, '<del>$1</del>')
+    .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+  tokens.forEach((item, index) => { html = html.replace(`@@AGENTG_MD_${index}@@`, item); });
+  return html;
+}
+
+function markdownTableCells(line) {
+  let value = String(line || '').trim();
+  if (value.startsWith('|')) value = value.slice(1);
+  if (value.endsWith('|')) value = value.slice(0, -1);
+  return value.split('|').map(cell => cell.trim());
+}
+
+function isMarkdownTableSeparator(line) {
+  const cells = markdownTableCells(line);
+  return cells.length > 0 && cells.every(cell => /^:?-{3,}:?$/.test(cell));
+}
+
+function renderMarkdown(value) {
+  const lines = String(value == null ? '' : value).replace(/\r\n?/g, '\n').split('\n');
+  const blocks = [];
+  let paragraph = [];
+  let listType = '';
+  let listItems = [];
+  let inFence = false;
+  let fenceLanguage = '';
+  let codeLines = [];
+
+  const flushParagraph = () => {
+    if (!paragraph.length) return;
+    blocks.push(`<p>${paragraph.map(renderMarkdownInline).join('<br>')}</p>`);
+    paragraph = [];
+  };
+  const flushList = () => {
+    if (!listItems.length) return;
+    blocks.push(`<${listType}>${listItems.map(item => `<li>${renderMarkdownInline(item)}</li>`).join('')}</${listType}>`);
+    listType = '';
+    listItems = [];
+  };
+  const flushText = () => { flushParagraph(); flushList(); };
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const fence = line.match(/^\s*```\s*([\w.+-]*)\s*$/);
+    if (fence) {
+      flushText();
+      if (inFence) {
+        const language = fenceLanguage ? ` data-language="${escapeHtml(fenceLanguage)}"` : '';
+        blocks.push(`<pre><code${language}>${escapeHtml(codeLines.join('\n'))}</code></pre>`);
+        inFence = false;
+        fenceLanguage = '';
+        codeLines = [];
+      } else {
+        inFence = true;
+        fenceLanguage = fence[1] || '';
+      }
+      continue;
+    }
+    if (inFence) { codeLines.push(line); continue; }
+    if (!line.trim()) { flushText(); continue; }
+
+    if (index + 1 < lines.length && line.includes('|') && isMarkdownTableSeparator(lines[index + 1])) {
+      flushText();
+      const headers = markdownTableCells(line);
+      index += 1;
+      const rows = [];
+      while (index + 1 < lines.length && lines[index + 1].trim() && lines[index + 1].includes('|')) {
+        rows.push(markdownTableCells(lines[index + 1]));
+        index += 1;
+      }
+      const head = headers.map(cell => `<th>${renderMarkdownInline(cell)}</th>`).join('');
+      const body = rows.map(row => `<tr>${headers.map((_, cellIndex) => `<td>${renderMarkdownInline(row[cellIndex] || '')}</td>`).join('')}</tr>`).join('');
+      blocks.push(`<div class="markdown-table-wrap"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`);
+      continue;
+    }
+
+    const heading = line.match(/^(#{1,6})\s+(.+)$/);
+    if (heading) {
+      flushText();
+      const level = heading[1].length;
+      blocks.push(`<h${level}>${renderMarkdownInline(heading[2])}</h${level}>`);
+      continue;
+    }
+    if (/^\s*(?:---+|\*\*\*+)\s*$/.test(line)) { flushText(); blocks.push('<hr>'); continue; }
+    const unordered = line.match(/^\s*[-+*]\s+(.+)$/);
+    const ordered = line.match(/^\s*\d+[.)]\s+(.+)$/);
+    if (unordered || ordered) {
+      flushParagraph();
+      const nextType = unordered ? 'ul' : 'ol';
+      if (listType && listType !== nextType) flushList();
+      listType = nextType;
+      listItems.push((unordered || ordered)[1]);
+      continue;
+    }
+    const quote = line.match(/^\s*>\s?(.*)$/);
+    if (quote) { flushText(); blocks.push(`<blockquote>${renderMarkdownInline(quote[1])}</blockquote>`); continue; }
+    if (listItems.length) flushList();
+    paragraph.push(line);
+  }
+  if (inFence) blocks.push(`<pre><code>${escapeHtml(codeLines.join('\n'))}</code></pre>`);
+  flushText();
+  return blocks.join('');
+}
+
+const decisionStageLabels = {
+  input:'接收任务', tool_selection:'选择工具', tool_observation:'观察结果',
+  revision:'修订产物', delivery:'提交产物'
+};
+
+function formatDecisionTrace(trace={}) {
+  const lines = [
+    `${trace.task_id || 'unknown'} · ${decisionStageLabels[trace.stage] || trace.stage || '执行'} · ${trace.status || 'pending'}`,
+    trace.summary || ''
+  ];
+  if (trace.action) lines.push(`动作：${trace.action}`);
+  if (Array.isArray(trace.evidence_refs) && trace.evidence_refs.length) {
+    lines.push(`证据引用：${trace.evidence_refs.join('、')}`);
+  }
+  return lines.filter(Boolean).join('\n');
+}
+
+function workerTraceKey(agentType, taskId, attempt=1) {
+  return `${String(agentType || '').toLowerCase()}:${String(taskId || '')}:${Number(attempt || 1)}`;
+}
+
+function parseWorkerMessageIdentity(content='') {
+  const match = String(content).match(/^\[(Research|Code|Data|Synthesis)Agent:([^\]]+)\]\s+attempt=(\d+)/i);
+  if (!match) return null;
+  return {agentType:match[1].toLowerCase(), taskId:match[2], attempt:Number(match[3])};
+}
+
+function registerAgentCard(card, identity) {
+  if (!card || !identity) return;
+  card.dataset.agentType = identity.agentType;
+  card.dataset.taskId = identity.taskId;
+  card.dataset.attempt = String(identity.attempt || 1);
+  liveAgentCards.set(workerTraceKey(identity.agentType, identity.taskId, identity.attempt), card);
+}
+
+function findAgentCardForTrace(trace={}) {
+  const exact = liveAgentCards.get(workerTraceKey(trace.agent_type, trace.task_id, trace.attempt));
+  if (exact) return exact;
+  return [...liveAgentCards.values()].find(card =>
+    card.dataset.agentType === String(trace.agent_type || '').toLowerCase() &&
+    card.dataset.taskId === String(trace.task_id || '')
+  ) || null;
+}
+
+function attachDecisionTraceToCard(card, trace={}, collapsed=false) {
+  if (!card) return false;
+  const body = card.querySelector('.card-body');
+  if (!body) return false;
+  let group = body.querySelector('.decision-trace-group');
+  if (!group) {
+    group = document.createElement('details');
+    group.className = 'decision-trace-group';
+    group.open = !collapsed;
+    const summary = document.createElement('summary');
+    const chevron = document.createElement('span');
+    chevron.className = 'trace-chevron';
+    chevron.textContent = '⌄';
+    const title = document.createElement('span');
+    title.textContent = 'Decision Trace · 决策轨迹';
+    const count = document.createElement('span');
+    count.className = 'decision-trace-count';
+    summary.append(chevron, title, count);
+    const list = document.createElement('div');
+    list.className = 'decision-trace-list';
+    group.append(summary, list);
+    body.appendChild(group);
+  }
+  const entry = document.createElement('div');
+  entry.className = 'decision-trace-entry';
+  entry.textContent = formatDecisionTrace(trace);
+  const list = group.querySelector('.decision-trace-list');
+  list.appendChild(entry);
+  group.querySelector('.decision-trace-count').textContent = `${list.children.length} 条`;
+  return true;
 }
 
 function outcomeOf(task) {
@@ -565,9 +994,10 @@ function updateComposerMode(task=null) {
   input.placeholder = continuing ? '继续此会话…' : '描述一个任务，例如：随机选择三个城市并查询当前天气…';
   if (task) workspace.value = task.workspace_path || '';
   workspace.disabled = !!(task && task.workspace_path);
+  const hotkeyLabel = submitHotkeys[submitHotkey].label;
   hint.textContent = continuing
-    ? `Ctrl + Enter 继续第 ${(task.turn_index || 1) + 1} 轮 · 工作目录在会话内保持不变`
-    : 'Ctrl + Enter 执行 · 完成后可在同一会话中继续追加任务';
+    ? `${hotkeyLabel} 继续第 ${(task.turn_index || 1) + 1} 轮 · 工作目录在会话内保持不变`
+    : `${hotkeyLabel} 执行 · 完成后可在同一会话中继续追加任务`;
 }
 
 function turnAnchorId(threadId, index=0) {
@@ -624,13 +1054,17 @@ function showEmpty() {
   document.getElementById('outputInner').innerHTML = '<div class="empty-state"><div class="empty-content"><div class="empty-icon" role="img" aria-label="AgentG Researcher Core Logo"><svg viewBox="0 0 100 100" aria-hidden="true" focusable="false"><use href="#researcher-core-mark"></use></svg></div><h2>让专业 Agent 组队完成任务</h2><p>任务会显示在左侧；Router、Orchestrator、Workers 与 Reviewer 的执行过程会在这里持续更新。</p></div></div>';
   document.getElementById('agentStatusBar').classList.remove('visible');
   document.getElementById('summaryBar').classList.remove('visible');
+  document.getElementById('jumpBottomBtn').classList.remove('visible');
   renderTurnNavigation([]);
   updateComposerMode(null);
 }
 
 function beginTimeline(clear=true) {
   const inner = document.getElementById('outputInner');
-  if (clear || !inner.querySelector('.timeline')) inner.innerHTML = '<div class="timeline" id="timeline"></div>';
+  if (clear || !inner.querySelector('.timeline')) {
+    inner.innerHTML = '<div class="timeline" id="timeline"></div>';
+    liveAgentCards = new Map();
+  }
   return document.getElementById('timeline');
 }
 
@@ -650,6 +1084,7 @@ function addCard(node, content, scroll=true, options={}) {
   const container = options.container || activeTurn || timeline;
   const card = document.createElement('article');
   card.className = `card ${safeNode}`;
+  card.dataset.node = safeNode;
   const header = document.createElement('div');
   header.className = 'card-header';
   const label = document.createElement('div');
@@ -663,7 +1098,18 @@ function addCard(node, content, scroll=true, options={}) {
   controls.appendChild(step);
   const body = document.createElement('div');
   body.className = 'card-body';
-  body.textContent = content || '(无输出)';
+  const cardContent = document.createElement('div');
+  cardContent.className = 'card-content';
+  const markdownNodes = new Set([
+    'task_router','orchestrator','research_worker','code_worker','data_worker',
+    'synthesis_worker','reviewer','done','user_summary'
+  ]);
+  const useMarkdown = options.markdown ?? markdownNodes.has(safeNode);
+  if (useMarkdown) {
+    cardContent.classList.add('markdown-body');
+    cardContent.innerHTML = renderMarkdown(content || '(无输出)');
+  } else cardContent.textContent = content || '(无输出)';
+  body.appendChild(cardContent);
   const collapsible = options.collapsible !== false && !['user','user_summary'].includes(safeNode);
   if (collapsible) {
     const toggle = document.createElement('button');
@@ -680,15 +1126,60 @@ function addCard(node, content, scroll=true, options={}) {
   container.appendChild(card);
   if (collapsible && options.collapsed) setCardCollapsed(card, true);
   if (scroll) card.scrollIntoView({behavior:'smooth', block:'end'});
+  requestAnimationFrame(updateJumpBottomButton);
   return card;
+}
+
+function createProcessGroup(section, terminal) {
+  const group = document.createElement('details');
+  group.className = 'process-group';
+  group.open = !terminal;
+  const summary = document.createElement('summary');
+  const chevron = document.createElement('span');
+  chevron.className = 'process-chevron';
+  chevron.textContent = '⌄';
+  const title = document.createElement('span');
+  title.className = 'process-title';
+  title.textContent = '思考与执行过程';
+  const count = document.createElement('span');
+  count.className = 'process-count';
+  summary.append(chevron, title, count);
+  const body = document.createElement('div');
+  body.className = 'process-body';
+  group.append(summary, body);
+  section.appendChild(group);
+  return {group, body, count};
+}
+
+function updateJumpBottomButton() {
+  const output = document.getElementById('outputArea');
+  const button = document.getElementById('jumpBottomBtn');
+  const remaining = output.scrollHeight - output.clientHeight - output.scrollTop;
+  button.classList.toggle('visible', output.scrollHeight > output.clientHeight + 24 && remaining > 96);
+}
+
+function jumpToConversationBottom() {
+  const output = document.getElementById('outputArea');
+  output.scrollTo({top:output.scrollHeight, behavior:'smooth'});
+}
+
+function focusLatestResult() {
+  const summaries = document.querySelectorAll('.turn-section .card.user_summary');
+  const target = summaries[summaries.length - 1];
+  if (target) target.scrollIntoView({behavior:'smooth', block:'end'});
+  else jumpToConversationBottom();
 }
 
 function setWorkflowStatus(agent, state, data={}) {
   const suffix = data.batch && data.batch.length ? ` · ${data.batch.join(', ')}` :
     data.targets && data.targets.length ? ` · ${data.targets.join(', ')}` : '';
-  document.getElementById('agentStatusBar').classList.add('visible');
+  const bar = document.getElementById('agentStatusBar');
+  bar.classList.add('visible');
+  const running = ['thinking','retrying','resuming'].includes(state) || outcomeOf(currentTask || {}) === 'run';
+  bar.classList.toggle('running', running && agent !== 'done');
   document.getElementById('workflowStatus').textContent = (workflowLabels[agent] || agent || '工作流执行中') + suffix;
   document.getElementById('workflowDot').className = `workflow-dot ${state || 'thinking'}`;
+  updateRuntimeClock();
 }
 
 function renderTask(task, scroll=false) {
@@ -710,29 +1201,58 @@ function renderTask(task, scroll=false) {
     addCard('user', turn.task || '未命名任务', false, {container:section, collapsible:false});
 
     const messages = Array.isArray(turn.messages) ? turn.messages : [];
-    const collapseSteps = isTerminalTask(turn);
-    messages.forEach(message => addCard(
-      message.source || 'node', message.content, false,
-      {container:section, collapsed:collapseSteps}
-    ));
+    const terminal = isTerminalTask(turn);
+    const traces = Array.isArray(turn.decision_traces) ? turn.decision_traces : [];
+    const hasTechnicalProcess = messages.length || traces.length || turn.status === 'failed' ||
+      turn.status === 'terminated' || (!messages.length && turn.execution_result);
+    const process = hasTechnicalProcess ? createProcessGroup(section, terminal) : null;
+    const processContainer = process ? process.body : section;
+    messages.forEach(message => {
+      const card = addCard(
+        message.source || 'node', message.content, false,
+        {container:processContainer, collapsed:outcomeOf(turn) === 'run'}
+      );
+      registerAgentCard(card, parseWorkerMessageIdentity(message.content));
+    });
+    traces.forEach(trace => {
+      let card = findAgentCardForTrace(trace);
+      if (!card) {
+        const node = cardLabels[`${trace.agent_type}_worker`] ? `${trace.agent_type}_worker` : 'node';
+        card = addCard(node, `子任务 ${trace.task_id || 'unknown'} · attempt=${trace.attempt || 1}`, false, {container:processContainer});
+        registerAgentCard(card, {
+          agentType:String(trace.agent_type || ''), taskId:String(trace.task_id || ''), attempt:Number(trace.attempt || 1)
+        });
+      }
+      attachDecisionTraceToCard(card, trace, terminal);
+    });
     if (turn.status === 'failed') addCard(
       'error', `执行失败: ${turn.error || '未知错误'}`, false,
-      {container:section, collapsed:true}
+      {container:processContainer}
     );
     if (turn.status === 'terminated') {
       const reason = (turn.termination || {}).reason || 'resource_limit';
-      addCard('resource_terminated', `资源限制终止: ${reason}`, false, {container:section, collapsed:true});
+      addCard('resource_terminated', `资源限制终止: ${reason}`, false, {container:processContainer});
     }
     if (!messages.length && turn.execution_result) addCard(
       'synthesis_worker', turn.execution_result, false,
-      {container:section, collapsed:collapseSteps}
+      {container:processContainer}
     );
-    if (!messages.length && !turn.execution_result && !turn.error && turn.status !== 'terminated') {
+    if (outcomeOf(turn) === 'run') {
+      const placeholder = document.createElement('div');
+      placeholder.className = 'progress-placeholder running';
+      const agent = workflowLabels[turn.current_agent] || '等待第一个节点结果';
+      placeholder.innerHTML = `<strong>任务正在执行</strong><span>${escapeHtml(agent)} · 运行时间会在顶部实时更新</span>`;
+      section.appendChild(placeholder);
+    } else if (!messages.length && !turn.execution_result && !turn.error && turn.status !== 'terminated') {
       const placeholder = document.createElement('div');
       placeholder.className = 'progress-placeholder';
-      const agent = workflowLabels[turn.current_agent] || '等待第一个节点结果';
-      placeholder.innerHTML = `<strong>${outcomeOf(turn) === 'run' ? '任务正在执行' : '任务已创建'}</strong><span>${escapeHtml(agent)}</span>`;
+      placeholder.innerHTML = '<strong>任务已创建</strong><span>等待开始执行</span>';
       section.appendChild(placeholder);
+    }
+    if (process) {
+      const count = process.body.querySelectorAll(':scope > .card').length;
+      process.count.textContent = `${count} 个步骤`;
+      if (!count) process.group.remove();
     }
     const userSummary = turn.user_summary || {};
     if (userSummary.title || userSummary.content) {
@@ -746,6 +1266,7 @@ function renderTask(task, scroll=false) {
     document.getElementById('agentStatusBar').classList.toggle('visible', !!task.current_agent);
     if (task.current_agent) setWorkflowStatus(task.current_agent, outcomeOf(task) === 'success' ? 'complete' : '');
   }
+  updateRuntimeClock();
 
   const summary = document.getElementById('summaryBar');
   if (task.saved_files && task.saved_files.length) {
@@ -753,7 +1274,10 @@ function renderTask(task, scroll=false) {
     summary.textContent = `代码产物 · ${task.saved_files.map(path => path.replaceAll('\\','/').split('/').pop()).join(', ')}`;
   } else summary.classList.remove('visible');
   updateComposerMode(task);
-  requestAnimationFrame(updateActiveTurnNavigation);
+  requestAnimationFrame(() => {
+    updateActiveTurnNavigation();
+    updateJumpBottomButton();
+  });
   if (scroll) document.getElementById('outputArea').scrollTop = document.getElementById('outputArea').scrollHeight;
 }
 
@@ -769,7 +1293,8 @@ async function fetchTask(threadId) {
 }
 
 function fingerprint(task) {
-  return [task.status, task.outcome, task.updated_at, (task.messages || []).length, task.current_agent].join('|');
+  return [task.status, task.outcome, task.updated_at, (task.messages || []).length,
+    (task.decision_traces || []).length, task.current_agent].join('|');
 }
 
 function followActiveTask(threadId) {
@@ -782,6 +1307,7 @@ function followActiveTask(threadId) {
       if (nextFingerprint !== lastFingerprint) {
         lastFingerprint = nextFingerprint;
         renderTask(task);
+        if (isTerminalTask(task)) requestAnimationFrame(focusLatestResult);
         await refreshHistory();
       }
       if (task.status !== 'running') stopDetailPoll();
@@ -789,7 +1315,7 @@ function followActiveTask(threadId) {
   }, 1800);
 }
 
-async function viewTask(threadId) {
+async function viewTask(threadId, options={}) {
   if (!threadId) return;
   if (eventSource) { eventSource.close(); eventSource = null; }
   stopDetailPoll();
@@ -799,7 +1325,8 @@ async function viewTask(threadId) {
     const task = await fetchTask(threadId);
     lastFingerprint = fingerprint(task);
     renderTask(task);
-    document.getElementById('outputArea').scrollTop = 0;
+    if (options.focusResult && isTerminalTask(task)) requestAnimationFrame(focusLatestResult);
+    else document.getElementById('outputArea').scrollTop = 0;
     await refreshHistory();
     if (task.status === 'running' && task.is_active) followActiveTask(threadId);
     else if ((task.status === 'running' && !task.is_active) || task.status === 'pending') startSSE(threadId);
@@ -809,7 +1336,8 @@ async function viewTask(threadId) {
 }
 
 function resetWorkspace(task, threadId) {
-  setHeader({task, thread_id:threadId, status:'running', outcome:'run', created_at:Date.now()/1000});
+  currentTask = {task, thread_id:threadId, status:'running', outcome:'run', run_started_at:Date.now()/1000, created_at:Date.now()/1000};
+  setHeader(currentTask);
   const timeline = beginTimeline(true);
   const section = document.createElement('section');
   section.className = 'turn-section';
@@ -818,6 +1346,14 @@ function resetWorkspace(task, threadId) {
   renderTurnNavigation([{task, thread_id:threadId, status:'running', outcome:'run', turn_index:1}]);
   setWorkflowStatus('task_router', 'thinking');
   document.getElementById('summaryBar').classList.remove('visible');
+  document.getElementById('jumpBottomBtn').classList.remove('visible');
+}
+
+function collapseCompletedAgentCard(node) {
+  const cards = [...document.querySelectorAll('.card[data-node]')]
+    .filter(card => card.dataset.node === node);
+  const card = cards.at(-1);
+  if (card && card.querySelector('.card-toggle')) setCardCollapsed(card, true);
 }
 
 function startSSE(threadId) {
@@ -827,15 +1363,35 @@ function startSSE(threadId) {
 
   eventSource.addEventListener('status', event => {
     const data = JSON.parse(event.data);
+    if (currentTask) {
+      currentTask.status = data.agent === 'done' ? currentTask.status : 'running';
+      currentTask.outcome = data.agent === 'done' ? currentTask.outcome : 'run';
+      currentTask.current_agent = data.agent;
+      currentTask.run_started_at ||= Date.now() / 1000;
+    }
+    if (data.state === 'complete') collapseCompletedAgentCard(data.agent);
     setWorkflowStatus(data.agent, data.state, data);
   });
   eventSource.addEventListener('node', event => {
     const data = JSON.parse(event.data);
-    addCard(data.node, data.content);
+    const card = addCard(data.node, data.content);
+    registerAgentCard(card, parseWorkerMessageIdentity(data.content));
+  });
+  eventSource.addEventListener('trace', event => {
+    const data = JSON.parse(event.data);
+    let card = findAgentCardForTrace(data.trace);
+    if (!card) {
+      const node = cardLabels[`${data.trace.agent_type}_worker`] ? `${data.trace.agent_type}_worker` : 'node';
+      card = addCard(node, `子任务 ${data.trace.task_id || 'unknown'} · attempt=${data.trace.attempt || 1}`);
+      registerAgentCard(card, {
+        agentType:String(data.trace.agent_type || ''), taskId:String(data.trace.task_id || ''), attempt:Number(data.trace.attempt || 1)
+      });
+    }
+    attachDecisionTraceToCard(card, data.trace, false);
   });
   eventSource.addEventListener('done', async () => {
     eventSource.close(); eventSource = null;
-    await viewTask(threadId);
+    await viewTask(threadId, {focusResult:true});
   });
   eventSource.addEventListener('error', async event => {
     if (!event.data) return;
@@ -846,10 +1402,11 @@ function startSSE(threadId) {
     try {
       const task = await fetchTask(threadId);
       renderTask(task);
+      if (isTerminalTask(task)) requestAnimationFrame(focusLatestResult);
     } catch (_) {}
     await refreshHistory();
   });
-  eventSource.addEventListener('heartbeat', () => {});
+  eventSource.addEventListener('heartbeat', updateRuntimeClock);
   eventSource.onerror = () => {
     if (eventSource && eventSource.readyState === EventSource.CLOSED) eventSource = null;
   };
@@ -941,6 +1498,129 @@ function closeConversationModal() {
   modalMode = null;
 }
 
+let memoryConversationId = null;
+let memoryOffset = 0;
+let memoryHistoryOffset = 0;
+let memoryRecord = null;
+let memoryRequest = 0;
+const memoryLabels = {user:'用户',project:'项目',conversation:'会话',artifact:'产物',
+  preference:'偏好',fact:'事实',experience:'经验',rule:'规则',active:'生效',candidate:'待确认',
+  disabled:'停用',deleted:'已删除',superseded:'已替代'};
+
+function memoryQuery() {
+  const query = new URLSearchParams({scope:document.getElementById('memoryScope').value});
+  if (memoryConversationId) query.set('conversation_id', memoryConversationId);
+  return query;
+}
+
+async function memoryFetch(url, options) {
+  const response = await fetch(url, options);
+  const result = await response.json();
+  if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : '记忆请求格式无效');
+  return result;
+}
+
+function closeMemoryManager() {
+  memoryRequest++;
+  document.getElementById('memoryModal').classList.remove('visible');
+  document.querySelector('.app').inert = false;
+  document.getElementById('memoryHeaderToggle').focus();
+}
+
+async function openMemoryManager() {
+  closeConversationMenu(); closeThemeMenu(); closeHotkeyMenu();
+  memoryConversationId = currentTask ? (currentTask.conversation_id || currentTask.thread_id) : null;
+  memoryOffset = 0; memoryRecord = null;
+  document.getElementById('memoryModal').classList.add('visible');
+  document.querySelector('.app').inert = true;
+  document.getElementById('memoryDetail').hidden = true;
+  document.getElementById('memoryList').textContent = '';
+  document.getElementById('memoryError').textContent = '';
+  document.getElementById('memoryClose').focus();
+  try {
+    const settings = await memoryFetch('/api/memories/settings');
+    document.getElementById('memorySettings').textContent = `长期记忆：${settings.enabled ? '已启用' : '未启用'} · 用户 ${settings.user_id} · 项目 ${settings.project_id || '未绑定'} · 自动候选提取：${settings.auto_extract ? '开' : '关'}（由用户配置 MEMORY_AUTO_EXTRACT；普通聊天不默认保存）`;
+    document.getElementById('memoryRetention').textContent = settings.retention_notice;
+    document.querySelector('#memoryScope option[value=project]').disabled = !settings.project_id;
+    ['conversation','artifact'].forEach(scope => document.querySelector(`#memoryScope option[value=${scope}]`).disabled = !memoryConversationId);
+    document.getElementById('memoryScope').value = 'user';
+    if (settings.enabled) await loadMemories();
+    else document.getElementById('memoryList').textContent = '请由用户启用 LONG_TERM_MEMORY_ENABLED 后重启服务。此页面不会创建数据库。';
+  } catch (error) { document.getElementById('memoryError').textContent = error.message; }
+}
+
+async function loadMemories() {
+  const ticket = ++memoryRequest;
+  memoryRecord = null;
+  document.getElementById('memoryDetail').hidden = true;
+  document.getElementById('memoryError').textContent = '';
+  const query = memoryQuery();
+  query.set('limit','50'); query.set('offset',String(memoryOffset));
+  if (document.getElementById('memoryStatus').value) query.set('status', document.getElementById('memoryStatus').value);
+  try {
+    const result = await memoryFetch(`/api/memories?${query}`);
+    if (ticket !== memoryRequest) return;
+    const list = document.getElementById('memoryList');
+    list.replaceChildren();
+    result.items.forEach(record => {
+      const button = document.createElement('button');
+      button.type = 'button'; button.dataset.memoryId = record.memory_id;
+      button.textContent = `${memoryLabels[record.kind]} · ${memoryLabels[record.status]} · v${record.version}${record.usable ? '' : ' · 不参与检索'}\n${record.content.slice(0,90)}`;
+      button.addEventListener('click', () => { memoryHistoryOffset = 0; loadMemoryDetail(record.memory_id); });
+      list.append(button);
+    });
+    if (!result.items.length) list.textContent = '此范围暂无条目。候选不会自动进入模型上下文。';
+    document.getElementById('memoryPrev').disabled = memoryOffset === 0;
+    document.getElementById('memoryNext').disabled = !result.has_more;
+  } catch (error) { if (ticket === memoryRequest) document.getElementById('memoryError').textContent = error.message; }
+}
+
+async function loadMemoryDetail(id) {
+  const ticket = ++memoryRequest;
+  document.getElementById('memoryDetail').hidden = true;
+  try {
+    const query = memoryQuery(); query.set('offset',String(memoryHistoryOffset));
+    const result = await memoryFetch(`/api/memories/${encodeURIComponent(id)}?${query}`);
+    if (ticket !== memoryRequest) return;
+    memoryRecord = result.record;
+    document.getElementById('memoryDetail').hidden = false;
+    document.getElementById('memoryError').textContent = '';
+    document.getElementById('memoryMetadata').textContent = `${id}\n${memoryLabels[memoryRecord.scope]} / ${memoryLabels[memoryRecord.kind]} / ${memoryLabels[memoryRecord.status]} · v${memoryRecord.version}\nSHA-256 ${memoryRecord.content_hash}\n观测：${memoryRecord.observed_at || '无'}\n到期：${memoryRecord.expires_at || '未设置'}\n当前修改原因：${memoryRecord.revision_note || '无'}`;
+    document.getElementById('memoryBody').value = memoryRecord.content;
+    document.getElementById('memoryReason').value = '';
+    document.getElementById('memoryConsent').checked = false;
+    document.getElementById('memoryHistory').textContent = result.history.map(item => `v${item.version} · ${memoryLabels[item.status]} · ${item.updated_at}\n原因：${item.revision_note || '无'}\n正文：${item.content}\n来源：${JSON.stringify(item.source_refs,null,2)}`).join('\n\n');
+    document.getElementById('memoryHistoryPrev').disabled = memoryHistoryOffset === 0;
+    document.getElementById('memoryHistoryNext').disabled = !result.has_more;
+    document.getElementById('memoryApply').disabled = ['deleted','superseded'].includes(memoryRecord.status);
+    document.getElementById('memoryAction').value = memoryRecord.status === 'candidate' ? 'confirm' : memoryRecord.status === 'disabled' ? 'enable' : 'correct';
+    document.getElementById('memoryBody').readOnly = document.getElementById('memoryAction').value !== 'correct';
+    document.querySelectorAll('[data-memory-id]').forEach(button => button.setAttribute('aria-current',String(button.dataset.memoryId === id)));
+  } catch (error) { if (ticket === memoryRequest) document.getElementById('memoryError').textContent = error.message; }
+}
+
+async function applyMemoryAction() {
+  if (!memoryRecord) return;
+  const button = document.getElementById('memoryApply');
+  const record = memoryRecord;
+  const action = document.getElementById('memoryAction').value;
+  const reason = document.getElementById('memoryReason').value.trim();
+  if (!document.getElementById('memoryConsent').checked || !reason) {
+    document.getElementById('memoryError').textContent = '请填写操作原因，并确认当前条目和作用域。'; return;
+  }
+  const payload = {action,reason,confirmed_content:record.content,
+    expected:{memory_id:record.memory_id,version:record.version,content_hash:record.content_hash}};
+  if (action === 'correct') payload.content = document.getElementById('memoryBody').value;
+  button.disabled = true;
+  try {
+    const result = await memoryFetch(`/api/memories/${encodeURIComponent(record.memory_id)}/actions?${memoryQuery()}`, {
+      method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    showToast(`记忆已更新：v${result.record.version} · ${memoryLabels[result.record.status]}`);
+    await loadMemories(); memoryHistoryOffset = 0; await loadMemoryDetail(record.memory_id);
+  } catch (error) { document.getElementById('memoryError').textContent = error.message; }
+  finally { button.disabled = memoryRecord ? ['deleted','superseded'].includes(memoryRecord.status) : true; }
+}
+
 function openConversationModal(mode) {
   if (!conversationMenuTarget) return;
   modalMode = mode;
@@ -949,6 +1629,7 @@ function openConversationModal(mode) {
   const modal = document.getElementById('conversationModal');
   const input = document.getElementById('modalInput');
   const confirm = document.getElementById('modalConfirm');
+  document.getElementById('modalMemoryCleanup').hidden = mode !== 'delete';
   if (mode === 'rename') {
     document.getElementById('modalTitle').textContent = '重命名会话';
     document.getElementById('modalDescription').textContent = '新名称会同步到该会话的全部轮次。';
@@ -966,6 +1647,15 @@ function openConversationModal(mode) {
     confirm.className = 'danger';
     modal.classList.add('visible');
     requestAnimationFrame(() => confirm.focus());
+    document.getElementById('memoryCleanupSelect').value = 'conversation';
+    document.getElementById('memoryImpact').textContent = '正在核查关联记忆…';
+    const id = conversationMenuTarget.conversation_id;
+    memoryFetch(`/api/conversations/${encodeURIComponent(id)}/memory-impact`).then(result => {
+      if (modalMode === 'delete' && conversationMenuTarget?.conversation_id === id)
+        document.getElementById('memoryImpact').textContent = result.enabled
+          ? `会话私有/产物 ${result.private} 条，关联用户/项目 ${result.promoted} 条。逻辑删除仍保留旧版本和备份原文；旧备份不得直接作为清理后的库启用。`
+          : '长期记忆关闭：本次不访问 SQLite，仅删除会话历史。若需要清理已保存记忆，请先启用长期记忆再删除会话。';
+    }).catch(error => { document.getElementById('memoryImpact').textContent = error.message; });
   }
 }
 
@@ -987,12 +1677,13 @@ async function confirmConversationModal() {
       await refreshHistory();
       showToast('会话已重命名');
     } else {
-      const response = await fetch(`/api/conversations/${encodeURIComponent(conversationId)}`, {method:'DELETE'});
+      const cleanup = document.getElementById('memoryCleanupSelect').value;
+      const response = await fetch(`/api/conversations/${encodeURIComponent(conversationId)}?memory_cleanup=${encodeURIComponent(cleanup)}`, {method:'DELETE'});
       const result = await response.json();
       if (!response.ok) throw new Error(result.detail || '会话删除失败');
       if (currentTask && (currentTask.conversation_id || currentTask.thread_id) === conversationId) newTask();
       else await refreshHistory();
-      showToast(`已删除 ${result.deleted_runs} 轮会话`);
+      showToast(`已删除 ${result.deleted_runs} 轮会话，逻辑删除 ${result.deleted_memories || 0} 条关联记忆`);
     }
     closeConversationModal();
   } catch (error) {
@@ -1083,6 +1774,7 @@ async function refreshHealth() {
 
 async function bootstrap() {
   initialiseTheme();
+  initialiseSubmitHotkey();
   await refreshHealth();
   const tasks = await refreshHistory();
   const queryTask = new URL(window.location.href).searchParams.get('task');
@@ -1095,6 +1787,7 @@ document.getElementById('newTaskBtn').addEventListener('click', newTask);
 document.getElementById('themeToggle').addEventListener('click', event => {
   event.stopPropagation();
   closeConversationMenu();
+  closeHotkeyMenu();
   const menu = document.getElementById('themeMenu');
   const visible = menu.classList.toggle('visible');
   document.getElementById('themeToggle').setAttribute('aria-expanded', String(visible));
@@ -1103,6 +1796,19 @@ document.querySelectorAll('.theme-option').forEach(option => option.addEventList
   applyTheme(option.dataset.theme);
   closeThemeMenu();
 }));
+document.getElementById('hotkeyToggle').addEventListener('click', event => {
+  event.stopPropagation();
+  closeConversationMenu();
+  closeThemeMenu();
+  const menu = document.getElementById('hotkeyMenu');
+  const visible = menu.classList.toggle('visible');
+  document.getElementById('hotkeyToggle').setAttribute('aria-expanded', String(visible));
+});
+document.querySelectorAll('.hotkey-option').forEach(option => option.addEventListener('click', () => {
+  applySubmitHotkey(option.dataset.hotkey);
+  closeHotkeyMenu();
+  showToast(`执行热键已改为 ${submitHotkeys[submitHotkey].label}`);
+}));
 document.getElementById('conversationMenu').addEventListener('click', event => {
   const action = event.target.closest('[data-action]')?.dataset.action;
   if (action === 'pin') togglePinnedConversation();
@@ -1110,6 +1816,21 @@ document.getElementById('conversationMenu').addEventListener('click', event => {
   else if (action === 'delete') openConversationModal('delete');
 });
 document.getElementById('modalCancel').addEventListener('click', closeConversationModal);
+document.getElementById('memoryToggle').addEventListener('click', openMemoryManager);
+document.getElementById('memoryHeaderToggle').addEventListener('click', openMemoryManager);
+document.getElementById('memoryClose').addEventListener('click', closeMemoryManager);
+document.getElementById('memoryRefresh').addEventListener('click', loadMemories);
+document.getElementById('memoryApply').addEventListener('click', applyMemoryAction);
+document.getElementById('memoryAction').addEventListener('change', () => {
+  document.getElementById('memoryBody').readOnly = document.getElementById('memoryAction').value !== 'correct';
+  document.getElementById('memoryConsent').checked = false;
+});
+['memoryScope','memoryStatus'].forEach(id => document.getElementById(id).addEventListener('change', () => { memoryOffset = 0; loadMemories(); }));
+document.getElementById('memoryPrev').addEventListener('click', () => { memoryOffset = Math.max(0,memoryOffset-50); loadMemories(); });
+document.getElementById('memoryNext').addEventListener('click', () => { memoryOffset += 50; loadMemories(); });
+document.getElementById('memoryHistoryPrev').addEventListener('click', () => { if (memoryRecord) { memoryHistoryOffset = Math.max(0,memoryHistoryOffset-25); loadMemoryDetail(memoryRecord.memory_id); } });
+document.getElementById('memoryHistoryNext').addEventListener('click', () => { if (memoryRecord) { memoryHistoryOffset += 25; loadMemoryDetail(memoryRecord.memory_id); } });
+document.getElementById('memoryModal').addEventListener('click', event => { if (event.target.id === 'memoryModal') closeMemoryManager(); });
 document.getElementById('modalConfirm').addEventListener('click', confirmConversationModal);
 document.getElementById('conversationModal').addEventListener('click', event => {
   if (event.target.id === 'conversationModal') closeConversationModal();
@@ -1117,17 +1838,34 @@ document.getElementById('conversationModal').addEventListener('click', event => 
 document.addEventListener('pointerdown', event => {
   if (!event.target.closest('#conversationMenu')) closeConversationMenu();
   if (!event.target.closest('#themeMenu') && !event.target.closest('#themeToggle')) closeThemeMenu();
+  if (!event.target.closest('#hotkeyMenu') && !event.target.closest('#hotkeyToggle')) closeHotkeyMenu();
 });
 document.getElementById('taskInput').addEventListener('input', event => {
   event.target.style.height = 'auto';
   event.target.style.height = `${Math.min(event.target.scrollHeight, 140)}px`;
 });
-document.getElementById('outputArea').addEventListener('scroll', updateActiveTurnNavigation, {passive:true});
+document.getElementById('outputArea').addEventListener('scroll', () => {
+  updateActiveTurnNavigation();
+  updateJumpBottomButton();
+}, {passive:true});
+document.getElementById('jumpBottomBtn').addEventListener('click', jumpToConversationBottom);
+window.addEventListener('resize', updateJumpBottomButton, {passive:true});
 document.getElementById('taskInput').addEventListener('keydown', event => {
-  if (event.key === 'Enter' && event.ctrlKey) { event.preventDefault(); submitTask(); }
+  if (matchesSubmitHotkey(event)) { event.preventDefault(); submitTask(); }
 });
 document.addEventListener('keydown', event => {
-  if (event.key === 'Escape') { closeConversationMenu(); closeThemeMenu(); closeConversationModal(); }
+  if (document.getElementById('memoryModal').classList.contains('visible')) {
+    if (event.key === 'Escape') closeMemoryManager();
+    if (event.key.toLowerCase() === 'n' && event.ctrlKey) event.preventDefault();
+    if (event.key === 'Tab') {
+      const focusable = [...document.querySelectorAll('#memoryModal button:not(:disabled),#memoryModal select:not(:disabled),#memoryModal textarea,#memoryModal input')].filter(node => node.getClientRects().length);
+      const first = focusable[0], last = focusable[focusable.length-1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    }
+    return;
+  }
+  if (event.key === 'Escape') { closeConversationMenu(); closeThemeMenu(); closeHotkeyMenu(); closeConversationModal(); }
   if (event.key === 'Enter' && document.getElementById('conversationModal').classList.contains('visible') && modalMode === 'rename') confirmConversationModal();
   if (event.key.toLowerCase() === 'n' && event.ctrlKey) { event.preventDefault(); newTask(); }
 });
@@ -1135,6 +1873,7 @@ document.addEventListener('keydown', event => {
 bootstrap();
 setInterval(refreshHistory, 8000);
 setInterval(refreshHealth, 30000);
+setInterval(updateRuntimeClock, 1000);
 </script>
 </body>
 </html>

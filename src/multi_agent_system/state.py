@@ -21,13 +21,23 @@ def merge_max_values(
         merged[key] = max(merged.get(key, 0), value)
     return merged
 
-
+# Graph State
 class MultiAgentState(TypedDict, total=False):
     """主图状态；作为 Agent 之间的结构化共享黑板。"""
 
     messages: Annotated[List[Any], add_messages]
     task: str
     conversation_context: list[Dict[str, str]]
+    memory_policy: Dict[str, Any]
+    memory_binding: Dict[str, Any]
+    memory_required_ids: list[str]
+    memory_event_at: str
+    retrieved_memories: Dict[str, Any]
+    worker_memories: Dict[str, Any]
+    worker_memory_grants: Dict[str, Any]
+    memory_write_plans: list[Dict[str, Any]]
+    memory_write_results: list[Dict[str, Any]]
+    memory_notices: list[str]
     workspace_path: str
     routing: Dict[str, Any]
     plan: str
@@ -36,12 +46,14 @@ class MultiAgentState(TypedDict, total=False):
     current_batch_ids: list[str]
     worker_results: Annotated[list[Dict[str, Any]], append_items]
     worker_attempts: Annotated[dict[str, int], merge_max_values]
+    decision_traces: Annotated[list[Dict[str, Any]], append_items]
     execution_result: str
     review: str
     review_status: str
     review_decision: Dict[str, Any]
     revision_targets: list[str]
     revision_feedback: str
+    revision_instructions: list[Dict[str, Any]]
     is_pass: bool
     attempts: int
     error_logs: Annotated[list[str], append_items]
@@ -51,7 +63,7 @@ class MultiAgentState(TypedDict, total=False):
     termination: Dict[str, Any]
     metadata: Dict[str, Any]
 
-
+# Worker State
 class WorkerInputState(TypedDict, total=False):
     """单个 Worker 的最小上下文，避免读取完整主图状态。"""
 
@@ -61,9 +73,19 @@ class WorkerInputState(TypedDict, total=False):
     workspace_path: str
     upstream_results: list[Dict[str, Any]]
     allowed_tools: list[str]
+    required_tools: list[str]
+    memory_policy: Dict[str, Any]
+    # Host validation binding is not included in the model prompt.
+    memory_binding: Dict[str, Any]
+    retrieved_memories: Dict[str, Any]
+    memory_artifact_grants: list[Dict[str, Any]]
+    python_timeout_seconds: float
+    tool_output_max_chars: int
     output_format: str
     acceptance_criteria: list[str]
     revision_feedback: str
+    revision_instruction: Dict[str, Any]
+    previous_deliverable: Dict[str, Any]
     attempt: int
     max_tool_rounds: int
     tool_call_quota: int
@@ -78,12 +100,24 @@ def create_initial_state(
     *,
     conversation_context: list[Dict[str, str]] | None = None,
     workspace_path: str = "",
+    conversation_id: str | None = None,
+    memory_required_ids: list[str] | None = None,
 ) -> MultiAgentState:
     """为 CLI、Web 和测试创建一致的初始状态。"""
     return {
         "messages": [],
         "task": task,
         "conversation_context": list(conversation_context or []),
+        "memory_policy": {},
+        "memory_binding": {},
+        "memory_required_ids": list(memory_required_ids or []),
+        "memory_event_at": "",
+        "retrieved_memories": {},
+        "worker_memories": {},
+        "worker_memory_grants": {},
+        "memory_write_plans": [],
+        "memory_write_results": [],
+        "memory_notices": [],
         "workspace_path": workspace_path,
         "routing": {},
         "plan": "",
@@ -92,12 +126,14 @@ def create_initial_state(
         "current_batch_ids": [],
         "worker_results": [],
         "worker_attempts": {},
+        "decision_traces": [],
         "execution_result": "",
         "review": "",
         "review_status": "",
         "review_decision": {},
         "revision_targets": [],
         "revision_feedback": "",
+        "revision_instructions": [],
         "is_pass": False,
         "attempts": 0,
         "error_logs": [],
@@ -105,5 +141,5 @@ def create_initial_state(
         "resource_policy": {},
         "resource_events": [],
         "termination": {},
-        "metadata": {"thread_id": thread_id},
+        "metadata": {"thread_id": thread_id, "conversation_id": conversation_id or thread_id},
     }

@@ -34,9 +34,53 @@ class TestSettings:
         assert s.max_consecutive_errors == 2
         assert s.max_run_seconds == 120.0
         assert s.total_action_budget == 40
+        assert s.context_max_tokens == 320000
+        assert s.context_output_reserve == 16000
+        assert s.conversation_max_tokens == 4000
+        assert s.python_timeout_seconds == 15.0
+        assert s.model_request_timeout_seconds == 180.0
+        assert s.max_review_rounds == 100
+        assert s.long_term_memory_enabled is False
+        assert s.memory_db_path.endswith("long_term.sqlite3")
+        assert s.memory_db_busy_timeout_ms == 5000
 
 
 class TestGetSettings:
+    def test_long_term_memory_policy_environment(self, monkeypatch):
+        for key, value in {
+            "MEMORY_USER_ID": "local-person", "MEMORY_PROJECT_ID": "project-one",
+            "MEMORY_TOP_K": "3", "MEMORY_MAX_TOKENS": "2400", "MEMORY_SCAN_LIMIT": "50",
+            "MEMORY_AUTO_EXTRACT": "true",
+        }.items():
+            monkeypatch.setenv(key, value)
+        configured = get_settings()
+        assert (configured.memory_user_id, configured.memory_project_id) == ("local-person", "project-one")
+        assert (configured.memory_top_k, configured.memory_max_tokens, configured.memory_scan_limit) == (3, 2400, 50)
+        assert configured.memory_auto_extract is True
+
+    @pytest.mark.parametrize("value, expected", [("100", 100), ("3", 3), ("1", 1), ("0", 1), ("invalid", 2)])
+    def test_review_rounds_configuration(self, monkeypatch, value, expected):
+        monkeypatch.setenv("MAX_REVIEW_ROUNDS", value)
+        assert get_settings().max_review_rounds == expected
+
+    def test_context_and_tool_settings(self, monkeypatch):
+        monkeypatch.setenv("CONTEXT_MAX_TOKENS", "24000")
+        monkeypatch.setenv("CONTEXT_OUTPUT_RESERVE", "3000")
+        monkeypatch.setenv("CONVERSATION_MAX_TOKENS", "5000")
+        monkeypatch.setenv("SUMMARY_MAX_TOKENS", "900")
+        monkeypatch.setenv("MEMORY_RECENT_TURNS", "4")
+        monkeypatch.setenv("UPSTREAM_MAX_TOKENS", "3500")
+        monkeypatch.setenv("TOOL_OUTPUT_MAX_CHARS", "6000")
+        monkeypatch.setenv("PYTHON_TIMEOUT_SECONDS", "7.5")
+        monkeypatch.setenv("MODEL_REQUEST_TIMEOUT_SECONDS", "33.5")
+        settings = get_settings()
+        assert (settings.context_max_tokens, settings.context_output_reserve) == (24000, 3000)
+        assert (settings.conversation_max_tokens, settings.summary_max_tokens, settings.recent_turns) == (5000, 900, 4)
+        assert settings.upstream_max_tokens == 3500
+        assert settings.tool_output_max_chars == 6000
+        assert settings.python_timeout_seconds == 7.5
+        assert settings.model_request_timeout_seconds == 33.5
+
     def test_reads_env_vars(self, monkeypatch):
         monkeypatch.setenv("OPENAI_API_KEY", "sk-env-key")
         monkeypatch.setenv("OPENAI_BASE_URL", "https://env.example.com/v1")

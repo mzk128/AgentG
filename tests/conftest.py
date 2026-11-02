@@ -4,13 +4,31 @@ from unittest.mock import MagicMock
 
 import pytest
 
-# 测试必须与用户专属的 .env 完全隔离，只使用 monkeypatch 注入的环境变量。
 os.environ["PYTHON_DOTENV_DISABLED"] = "1"
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from multi_agent_system.config import Settings
 from multi_agent_system.state import create_initial_state
+
+
+@pytest.fixture(autouse=True)
+def no_external_http(monkeypatch):
+    """Tests may explicitly mock providers, never fall through to the Internet.
+
+    Keep loopback sockets usable for ASGI TestClient/asyncio; blocking socket
+    globally would break the local event loop rather than test application IO.
+    """
+    def denied(*args, **kwargs):
+        raise AssertionError("external HTTP must be explicitly mocked")
+    async def denied_async(*args, **kwargs):
+        raise AssertionError("external HTTP must be explicitly mocked")
+    monkeypatch.setattr("urllib.request.urlopen", denied)
+    monkeypatch.setattr("requests.sessions.Session.request", denied)
+    # TestClient uses httpx's ASGI transport, not a real network transport.
+    monkeypatch.setattr("httpx.HTTPTransport.handle_request", denied)
+    monkeypatch.setattr("httpx.AsyncHTTPTransport.handle_async_request", denied_async)
+    monkeypatch.setattr("multi_agent_system.agents._create_ddgs_client", denied)
 
 
 @pytest.fixture

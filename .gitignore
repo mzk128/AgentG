@@ -20,6 +20,7 @@ Thumbs.db
 
 # Agent 运行产物
 src/multi_agent_system/workspace/
+.agentg/
 *.log
 
 # Resume
